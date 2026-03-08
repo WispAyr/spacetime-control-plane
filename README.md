@@ -1,21 +1,74 @@
 # Spacetime Control Plane
 
-A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb.com) applications — with multi-tenant management, real-time monitoring, AI agent observability, row-level security policies, backup/restore, and full MCP integration.
+A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb.com) — multi-tenant management, real-time monitoring, AI agent observability, row-level security, backup/restore, and full MCP integration.
 
-> Think Supabase Studio + Retool + AI observability — but for SpacetimeDB.
+> Think **Supabase Studio + Retool + AI observability** — but for SpacetimeDB.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-v2.0.3-purple.svg)
 ![MCP](https://img.shields.io/badge/MCP-15_tools-green.svg)
-![Pages](https://img.shields.io/badge/UI-11_pages-blue.svg)
-![API](https://img.shields.io/badge/API-33+_endpoints-orange.svg)
+![Pages](https://img.shields.io/badge/UI-12_pages-blue.svg)
+![API](https://img.shields.io/badge/API-40+_endpoints-orange.svg)
+
+---
+
+## 🖼️ Screenshots
+
+### Dashboard
+System health overview with stat cards, tenant status grid, deploy timeline, and quick links. Auto-refreshes every 15 seconds.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Tables & Data Grid
+Real-time table browser with live data grid, schema inspector, and auto-refresh. Click any table to explore rows and column types.
+
+![Tables](docs/screenshots/tables.png)
+
+### Monitoring Dashboard
+Real-time cluster health monitoring — tenant counts, deploy stats, error tracking, and per-tenant health grid with auto-refresh.
+
+![Monitoring](docs/screenshots/monitoring.png)
+
+### Row-Level Security
+Define per-table access policies and auto-generate TypeScript guard code for SpacetimeDB reducer modules.
+
+![Policies](docs/screenshots/policies.png)
+
+### Tenant Management
+Auto-discover SpacetimeDB modules, one-click deploy, log streaming, and backup/restore.
+
+![Tenants](docs/screenshots/tenants.png)
+
+### Security & Auth
+JWT session management, API key generation with scoped permissions, key revocation, and integration guide.
+
+![Security](docs/screenshots/security.png)
+
+<details>
+<summary>More screenshots</summary>
+
+### Reducers
+Interactive reducer forms — view signatures, expand to fill typed parameters, invoke, and see success/error feedback.
+
+![Reducers](docs/screenshots/reducers.png)
+
+### SQL Console
+Write and execute SQL queries with results rendered as formatted tables.
+
+![SQL](docs/screenshots/sql.png)
+
+</details>
+
+---
 
 ## Features
 
-### 🗄️ Multi-Database Management
-- **Database Switcher** — Toggle between multiple SpacetimeDB modules from the TopBar
-- **Topology Graph** — Draggable SVG visualization of all databases connected to your instance
-- **Overview Cards** — Stats dashboard with table counts, reducer counts, and live row counts
+### 🏠 Dashboard Home
+- **System Health** — SpacetimeDB online/offline indicator with backend uptime
+- **Stat Cards** — Tenants, deploys, security status at a glance
+- **Tenant Grid** — Online/offline status per tenant with table/reducer counts
+- **Deploy Timeline** — Recent deploy history with success/failure indicators
+- **Quick Links** — Monitoring, RLS Policies, Security, Webhooks
 
 ### 📊 Schema Browser & Data Grid
 - **Auto-discovery** — Connects to any SpacetimeDB module and introspects the schema at runtime
@@ -27,22 +80,20 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 - **SQL Console** — Write and execute SQL queries with results rendered as tables
 
 ### 🤖 AI Observability
-- **Activity Feed** — Timeline of AI agent actions (queries, reducer calls, suggestions) with approve/reject workflow
-- **Rules Panel** — Human-editable rules that govern AI behavior (toggle on/off, priority ordering)
-- **AI Chat** — Real-time conversation between humans and AI agents via shared SpacetimeDB tables
+- **Activity Feed** — Timeline of AI agent actions with approve/reject workflow
+- **Rules Panel** — Human-editable rules that govern AI behavior
+- **AI Chat** — Real-time conversation between humans and AI agents
 
 ### 👥 Tenant Management
 - **Auto-Discovery** — Scans workspace for SpacetimeDB modules
-- **One-Click Deploy** — Register modules and publish to SpacetimeDB from the UI
-- **Deploy History** — Track all deployments with success/failure logs
+- **One-Click Deploy** — Register modules and publish from the UI
 - **Log Streaming** — View module logs (batch fetch + SSE streaming)
-- **Backup & Restore** — Full data export per tenant via SQL, download/restore from JSON
+- **Backup & Restore** — Full data export per tenant, download/restore from JSON
 
-### 📈 Monitoring Dashboard
+### 📈 Monitoring
 - **Aggregate Stats** — Tenants, deployed, errors, total deploys — real-time cards
 - **Tenant Health Grid** — Online/offline status indicators per tenant
-- **Click-to-Expand** — Per-table row counts, column counts, deploy success/fail rates
-- **Deploy Timeline** — Recent deploys with ✓/✗ status per tenant
+- **Deploy Timeline** — Recent deploys with ✓/✗ status
 - **Auto-Refresh** — Polls every 10 seconds (toggleable)
 
 ### 🛡️ Row-Level Security
@@ -55,44 +106,67 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 - **JWT Sessions** — Login with admin password, 24-hour tokens
 - **API Keys** — Generate `stcp_*` keys with scoped permissions (read/write/deploy)
 - **Key Management** — Masked display, last-used tracking, one-click revoke
-- **Integration Guide** — Built-in code examples for JWT and API key auth
+
+### 🔔 Webhooks
+- **Event Subscriptions** — Register URLs for deploy/failure/tenant events
+- **Test Delivery** — One-click webhook test
+- **Toggle & Manage** — Enable/disable without deleting
 
 ### 🔌 MCP Server
-- **15 MCP Tools** — Full SpacetimeDB + Control Plane access for any MCP-compatible AI
+- **15 MCP Tools** — Full SpacetimeDB + Control Plane access for AI agents
 - **stdio Transport** — Drop-in local integration
 - **Zero Config** — Just point it at your SpacetimeDB URL
 
-## Architecture
+---
+
+## Architecture & Methodology
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      Control Plane UI (11 pages)                 │
-│  ┌──────┬──────┬─────┬──────┬──────┬───────┬───────┬──────────┐ │
-│  │Tables│Reduc.│ SQL │Agent │Events│Tenants│Monitor│ Policies │ │
-│  └──┬───┴──┬───┴──┬──┴──┬───┴──┬───┴───┬───┴───┬───┴────┬─────┘ │
-│     └──────┴──────┴─────┴──────┴───────┴───────┴────────┘       │
+│                    Control Plane UI (12 pages)                    │
+│  React 19 + TypeScript + Vite + Glassmorphism CSS                │
+│                                                                   │
+│  ┌──────┬──────┬─────┬──────┬──────┬───────┬───────┬──────────┐  │
+│  │ Home │Tables│ SQL │Agent │Event │Tenant │Monitor│ Policies │  │
+│  └──┬───┴──┬───┴──┬──┴──┬───┴──┬───┴───┬───┴───┬───┴────┬─────┘  │
+│     └──────┴──────┴─────┴──────┴───────┴───────┴────────┘        │
 │                           │                                       │
 │  ┌────────────────────────▼──────────────────────────────────┐   │
 │  │              Backend Service (:3002)                        │   │
-│  │  33+ REST endpoints: tenants, deploy, logs, monitoring,    │   │
-│  │  auth, backup, schema, RLS policies, files                 │   │
+│  │  Node.js + Express · 40+ REST endpoints                    │   │
+│  │  Tenants · Deploy · Logs · Monitoring · Auth · Backup ·    │   │
+│  │  Schema · RLS Policies · Files · Webhooks · Dashboard      │   │
 │  └────────────────────────┬──────────────────────────────────┘   │
 └───────────────────────────┼──────────────────────────────────────┘
                             │
           ┌─────────────────▼───────────────┐
           │       SpacetimeDB :3001         │
           │  ┌───────────────────────────┐  │
-          │  │   App Module A            │  │  ← your app
-          │  │   App Module B            │  │  ← another app
-          │  │   Control Plane AI Module │  │  ← AI observability
+          │  │   App Module A            │  │
+          │  │   App Module B            │  │
+          │  │   Control Plane AI Module │  │
           │  └───────────────────────────┘  │
           └─────────────────▲───────────────┘
                             │
           ┌─────────────────┴───────────────┐
           │       MCP Server (stdio)        │
-          │    15 tools for AI agents       │
+          │   15 tools for AI agents        │
           └─────────────────────────────────┘
 ```
+
+### Design Principles
+
+1. **Federation Layer** — The control plane sits above SpacetimeDB, managing multiple databases/modules as tenants. Each tenant is an independent SpacetimeDB module with its own schema, reducers, and data.
+
+2. **Backend as Bridge** — The Express backend bridges the React UI and SpacetimeDB CLI/APIs. It handles tenant registration, deploy orchestration, log streaming, backup export, and policy management — things that SpacetimeDB doesn't natively support as a control plane.
+
+3. **Code Generation over ORM** — RLS policies aren't enforced at the database level (SpacetimeDB doesn't support this natively). Instead, the control plane generates TypeScript guard functions that you paste into your reducer modules. This keeps enforcement explicit and auditable.
+
+4. **MCP-First AI Integration** — Every backend capability is exposed as an MCP tool, making the control plane fully accessible to AI agents. The MCP server can list tenants, deploy modules, create backups, add RLS policies, and monitor health — all without the UI.
+
+5. **Glassmorphism Design System** — Custom dark theme with glass blur effects, JetBrains Mono for code, Inter for UI text, and a curated accent palette (blue, green, amber, red, purple, cyan).
+
+---
 
 ## Quick Start
 
@@ -118,12 +192,12 @@ spacetime publish test-module --server http://localhost:3001
 ### 3. Start the Control Plane
 
 ```bash
-# Frontend
+# Frontend (12 pages)
 cd control-plane
 npm install
 npm run dev
 
-# Backend (required for tenant management, monitoring, auth, backup)
+# Backend (required for tenant management, monitoring, auth, backup, webhooks)
 cd control-plane/backend
 npm install
 npm start
@@ -139,27 +213,29 @@ npm install
 SPACETIME_URL=http://localhost:3001 node index.js
 ```
 
+---
+
 ## Pages
 
-| Page | Sidebar | Description |
-|------|---------|-------------|
-| **Tables** | ⊞ | Browse tables with live data grid and schema inspector |
-| **Reducers** | ƒ | View signatures, expand to fill params and call reducers |
-| **SQL** | > | Write SQL, execute with ⌘↵, results as table |
-| **AI Agent** | ◉ | Activity feed (approve/reject) + rules panel (toggle) |
+| Page | Icon | Description |
+|------|------|-------------|
+| **Dashboard** | 🏠 | System overview with stat cards and quick links |
+| **Tables** | ⊞ | Live data grid with schema inspector |
+| **Reducers** | ƒ | Interactive reducer forms |
+| **SQL** | > | SQL console with markdown results |
+| **AI Agent** | ◉ | Activity feed + rules panel |
 | **Events** | ⚡ | AI chat with message bubbles |
-| **Tenants** | ◎ | Manage modules, deploy, logs, backup |
-| **Monitor** | 📊 | Real-time stats, health grid, deploy timeline |
-| **Policies** | 🛡️ | Row-level security policies with code generation |
-| **Security** | 🔐 | JWT sessions, API key management |
-| **Settings** | ⚙ | Topology graph + database overview cards |
+| **Tenants** | ◎ | Module management, deploy, logs, backup |
+| **Monitor** | 📊 | Real-time health grid + deploy timeline |
+| **Policies** | 🛡️ | RLS policy manager with code generation |
+| **Security** | 🔐 | JWT sessions + API key management |
+| **Settings** | ⚙ | Topology graph + database overview |
 
 ## Backend API
 
-The backend service (`control-plane/backend/server.js`) provides 33+ REST endpoints:
-
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
+| **Dashboard** | GET overview | Aggregated system stats |
 | **Tenants** | CRUD, register, discover | Manage tenant modules |
 | **Deploy** | POST publish | One-click deploy via CLI |
 | **Logs** | GET batch, SSE stream | Module log viewing |
@@ -169,6 +245,7 @@ The backend service (`control-plane/backend/server.js`) provides 33+ REST endpoi
 | **Backup** | Create, list, download, restore | Full data export/import |
 | **RLS** | Policy CRUD, codegen | Row-level security |
 | **Files** | Upload, list | Media reference storage |
+| **Webhooks** | CRUD, toggle, test | Event notifications |
 | **System** | Health check | Backend status |
 
 ## MCP Tools
@@ -218,13 +295,38 @@ The backend service (`control-plane/backend/server.js`) provides 33+ REST endpoi
 | `JWT_SECRET` | auto-generated | JWT signing secret |
 | `BACKEND_URL` | `http://localhost:3002` | MCP → backend URL |
 
+## Project Structure
+
+```
+spacetime-control-plane/
+├── control-plane/              # React + Vite frontend
+│   ├── src/
+│   │   ├── components/         # Sidebar, TopBar, ConnectDialog
+│   │   ├── hooks/              # useConnection (multi-instance context)
+│   │   ├── lib/                # SpacetimeDB HTTP client
+│   │   ├── pages/              # 12 page components
+│   │   └── test/               # Vitest setup
+│   ├── backend/                # Express backend service
+│   │   └── server.js           # 40+ REST endpoints
+│   └── mcp-server/             # MCP server (Node.js, stdio)
+│       └── index.js            # 15 tools + resources
+│
+├── modules/                    # SpacetimeDB server modules
+│   ├── test-module/            # Simple person table + reducers
+│   ├── inventory-app/          # Item + task tables with CRUD
+│   └── control-plane-module/   # AI observability module
+│
+├── docs/screenshots/           # UI screenshots for documentation
+└── README.md
+```
+
 ## Testing
 
 ```bash
 cd control-plane
 npm test              # Run all tests
 npm run test:watch    # Watch mode
-npm run test:coverage # With coverage report
+npm run test:coverage # Coverage report
 ```
 
 ## Tech Stack
