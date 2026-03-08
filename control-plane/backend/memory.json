@@ -1,0 +1,17 @@
+{
+  "a32da52b-da07-4830-b0d0-8f024d9de733": {
+    "preferences": {},
+    "patterns": [],
+    "notes": [
+      {
+        "id": "051b16df-f8b1-4394-b917-dfa9502406fd",
+        "content": "test-module needs npm install before deploy",
+        "tags": [
+          "deploy",
+          "npm"
+        ],
+        "createdAt": "2026-03-08T22:05:24.582Z"
+      }
+    ]
+  }
+}

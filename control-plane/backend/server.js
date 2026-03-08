@@ -20,6 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import { ExecutionContext, getExecutions, getExecution, getActiveLocks } from './execution-context.js';
 
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1334,7 +1335,7 @@ app.post('/api/tasks/:id/start', (req, res) => {
     res.json(task);
 });
 
-// Complete task
+// Complete task — with auto-summarization (DeerFlow context engineering)
 app.post('/api/tasks/:id/complete', (req, res) => {
     const { workerId, output } = req.body;
     const task = tasks.find(t => t.id === req.params.id);
@@ -1348,7 +1349,16 @@ app.post('/api/tasks/:id/complete', (req, res) => {
     task.output = output || null;
     task.updatedAt = now;
 
+    // Auto-generate summary (context engineering)
+    const durationMs = task.claimedAt ? new Date(now) - new Date(task.claimedAt) : 0;
+    const durationStr = durationMs > 60000
+        ? `${Math.round(durationMs / 60000)}m`
+        : `${Math.round(durationMs / 1000)}s`;
     const worker = workers.find(w => w.id === workerId);
+    const workerName = worker?.name || 'unknown';
+    const outputSnippet = output ? ` — ${output.slice(0, 100)}${output.length > 100 ? '…' : ''}` : '';
+    task.summary = `${workerName} completed "${task.title}" in ${durationStr}${outputSnippet}`;
+
     if (worker) {
         worker.currentTaskId = null;
         worker.tasksCompleted++;
@@ -1357,10 +1367,21 @@ app.post('/api/tasks/:id/complete', (req, res) => {
 
     saveTasks();
     saveWorkers();
-    logActivity(workerId, 'task.completed', 'task', task.id, `Completed: ${task.title}`);
+    logActivity(workerId, 'task.completed', 'task', task.id, task.summary);
 
     // Recalc goal progress
     if (task.goalId) recalcGoalProgress(task.goalId);
+
+    // Record pattern in worker memory
+    if (worker && task.skillId) {
+        try {
+            const mem = getOrCreateMemory(workerId);
+            const existing = mem.patterns.find(p => p.key === `skill:${task.skillId}`);
+            if (existing) { existing.count++; existing.lastUsed = now; }
+            else mem.patterns.push({ key: `skill:${task.skillId}`, value: task.title, count: 1, lastUsed: now });
+            saveMemory();
+        } catch { /* memory is best-effort */ }
+    }
 
     res.json(task);
 });
@@ -1705,6 +1726,184 @@ app.patch('/api/tenants/:id/environments', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Skills System (DeerFlow-inspired)
+// ─────────────────────────────────────────────────────────────
+
+const SKILLS_DIR = path.resolve(__dirname, 'skills');
+
+// Parse YAML-ish frontmatter from SKILL.md
+function parseSkillMd(content) {
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    if (!fmMatch) return { metadata: {}, content };
+    const metadata = {};
+    for (const line of fmMatch[1].split('\n')) {
+        const m = line.match(/^(\w+):\s*(.+)/);
+        if (m) {
+            let val = m[2].trim();
+            // Parse arrays like [dev, staging, prod]
+            if (val.startsWith('[') && val.endsWith(']')) {
+                val = val.slice(1, -1).split(',').map(s => s.trim());
+            }
+            metadata[m[1]] = val;
+        }
+    }
+    return { metadata, content: fmMatch[2].trim() };
+}
+
+function loadSkills() {
+    if (!existsSync(SKILLS_DIR)) return [];
+    const dirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+
+    return dirs.map(dir => {
+        const skillPath = path.join(SKILLS_DIR, dir, 'SKILL.md');
+        if (!existsSync(skillPath)) return null;
+        const raw = readFileSync(skillPath, 'utf-8');
+        const { metadata, content } = parseSkillMd(raw);
+        return {
+            id: dir,
+            name: metadata.name || dir,
+            description: metadata.description || '',
+            icon: metadata.icon || '📋',
+            category: metadata.category || 'general',
+            content,
+            raw,
+        };
+    }).filter(Boolean);
+}
+
+// List all skills (metadata only)
+app.get('/api/skills', (_req, res) => {
+    const skills = loadSkills().map(({ content, raw, ...meta }) => meta);
+    res.json(skills);
+});
+
+// Get full skill with rendered content
+app.get('/api/skills/:name', (req, res) => {
+    const skills = loadSkills();
+    const skill = skills.find(s => s.id === req.params.name);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    res.json(skill);
+});
+
+// ─────────────────────────────────────────────────────────────
+// Execution Audit Trail (DeerFlow-inspired sandboxed execution)
+// ─────────────────────────────────────────────────────────────
+
+// List recent executions
+app.get('/api/executions', (req, res) => {
+    let result = getExecutions();
+    if (req.query.tenantId) result = result.filter(e => e.tenantId === req.query.tenantId);
+    if (req.query.status) result = result.filter(e => e.status === req.query.status);
+    const limit = parseInt(req.query.limit) || 50;
+    res.json({ executions: result.slice(0, limit), locks: getActiveLocks() });
+});
+
+// Get single execution with full output
+app.get('/api/executions/:id', (req, res) => {
+    const exec = getExecution(req.params.id);
+    if (!exec) return res.status(404).json({ error: 'Execution not found' });
+    res.json(exec);
+});
+
+// ─────────────────────────────────────────────────────────────
+// Long-Term Memory (DeerFlow-inspired)
+// ─────────────────────────────────────────────────────────────
+
+const MEMORY_PATH = path.resolve(__dirname, 'memory.json');
+let memory = existsSync(MEMORY_PATH) ? JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) : {};
+function saveMemory() { writeFileSync(MEMORY_PATH, JSON.stringify(memory, null, 2)); }
+
+function getOrCreateMemory(workerId) {
+    if (!memory[workerId]) {
+        memory[workerId] = { preferences: {}, patterns: [], notes: [] };
+        saveMemory();
+    }
+    return memory[workerId];
+}
+
+// Get worker memory
+app.get('/api/workers/:id/memory', (req, res) => {
+    const mem = getOrCreateMemory(req.params.id);
+    const worker = workers.find(w => w.id === req.params.id);
+    res.json({ workerId: req.params.id, workerName: worker?.name || 'unknown', ...mem });
+});
+
+// Update preferences
+app.put('/api/workers/:id/memory/preferences', (req, res) => {
+    const mem = getOrCreateMemory(req.params.id);
+    Object.assign(mem.preferences, req.body);
+    saveMemory();
+    res.json(mem.preferences);
+});
+
+// Add a knowledge note
+app.post('/api/workers/:id/memory/notes', (req, res) => {
+    const { content, tags } = req.body;
+    if (!content) return res.status(400).json({ error: 'content required' });
+    const mem = getOrCreateMemory(req.params.id);
+    const note = {
+        id: randomUUID(),
+        content,
+        tags: tags || [],
+        createdAt: new Date().toISOString(),
+    };
+    mem.notes.push(note);
+    saveMemory();
+    res.status(201).json(note);
+});
+
+// Delete a note
+app.delete('/api/workers/:id/memory/notes/:noteId', (req, res) => {
+    const mem = getOrCreateMemory(req.params.id);
+    const idx = mem.notes.findIndex(n => n.id === req.params.noteId);
+    if (idx === -1) return res.status(404).json({ error: 'Note not found' });
+    mem.notes.splice(idx, 1);
+    saveMemory();
+    res.json({ deleted: true });
+});
+
+// Record or increment a pattern
+app.post('/api/workers/:id/memory/patterns', (req, res) => {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ error: 'key required' });
+    const mem = getOrCreateMemory(req.params.id);
+    const existing = mem.patterns.find(p => p.key === key);
+    if (existing) {
+        existing.count++;
+        existing.lastUsed = new Date().toISOString();
+        if (value) existing.value = value;
+    } else {
+        mem.patterns.push({ key, value: value || '', count: 1, lastUsed: new Date().toISOString() });
+    }
+    saveMemory();
+    res.json(mem.patterns);
+});
+
+// Search memory across all workers
+app.get('/api/memory/search', (req, res) => {
+    const q = (req.query.q || '').toLowerCase();
+    if (!q) return res.json({ results: [] });
+
+    const results = [];
+    for (const [workerId, mem] of Object.entries(memory)) {
+        const worker = workers.find(w => w.id === workerId);
+        for (const note of (mem.notes || [])) {
+            if (note.content.toLowerCase().includes(q) || (note.tags || []).some(t => t.toLowerCase().includes(q))) {
+                results.push({ type: 'note', workerId, workerName: worker?.name || 'unknown', ...note });
+            }
+        }
+        for (const pattern of (mem.patterns || [])) {
+            if (pattern.key.toLowerCase().includes(q) || pattern.value.toLowerCase().includes(q)) {
+                results.push({ type: 'pattern', workerId, workerName: worker?.name || 'unknown', ...pattern });
+            }
+        }
+    }
+    res.json({ results });
+});
+
+// ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
 
@@ -1714,5 +1913,6 @@ app.listen(PORT, () => {
     console.log(`Modules dir: ${MODULES_DIR}`);
     console.log(`Tenants: ${tenants.length} registered`);
     console.log(`API Keys: ${apiKeys.filter(k => k.active).length} active`);
+    console.log(`Skills: ${loadSkills().length} loaded`);
     console.log(`JWT Secret: ${JWT_SECRET.slice(0, 12)}...`);
 });

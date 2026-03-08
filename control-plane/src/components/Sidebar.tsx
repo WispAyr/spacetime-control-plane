@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-type Page = 'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings';
+type Page = 'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'skills' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings';
 
 interface SidebarProps {
     activePage: Page;
@@ -23,6 +23,7 @@ const workItems: { page: Page; icon: string; label: string }[] = [
     { page: 'tasks', icon: '📋', label: 'Tasks' },
     { page: 'workers', icon: '👤', label: 'Workers' },
     { page: 'operations', icon: '🔄', label: 'Ops' },
+    { page: 'skills', icon: '🧠', label: 'Skills' },
 ];
 
 const metaItems: { page: Page; icon: string; label: string }[] = [

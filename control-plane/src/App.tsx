@@ -17,9 +17,10 @@ import SettingsPage from './pages/SettingsPage';
 import TaskBoardPage from './pages/TaskBoardPage';
 import WorkersPage from './pages/WorkersPage';
 import MigrationsPage from './pages/MigrationsPage';
+import SkillsPage from './pages/SkillsPage';
 
 function AppContent() {
-  const [page, setPage] = useState<'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings'>('dashboard');
+  const [page, setPage] = useState<'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'instances' | 'monitoring' | 'policies' | 'security' | 'skills' | 'settings'>('dashboard');
   const [showConnect, setShowConnect] = useState(false);
   const { instances } = useConnection();
 
@@ -56,6 +57,8 @@ function AppContent() {
         return <PoliciesPage />;
       case 'security':
         return <SecurityPage />;
+      case 'skills':
+        return <SkillsPage />;
       case 'settings':
         return <SettingsPage />;
       default:
