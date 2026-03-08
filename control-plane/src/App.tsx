@@ -10,6 +10,7 @@ import TenantsPage from './pages/TenantsPage';
 import AgentPage from './pages/AgentPage';
 import MonitoringPage from './pages/MonitoringPage';
 import EventsPage from './pages/EventsPage';
+import SecurityPage from './pages/SecurityPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
@@ -38,6 +39,8 @@ function AppContent() {
         return <EventsPage />;
       case 'monitoring':
         return <MonitoringPage />;
+      case 'security':
+        return <SecurityPage />;
       case 'settings':
         return <SettingsPage />;
       default:

@@ -30,6 +30,7 @@ export default function TenantsPage() {
     const [deployLog, setDeployLog] = useState<{ tenantId: string; text: string } | null>(null);
     const [logsOpen, setLogsOpen] = useState<string | null>(null);
     const [logsText, setLogsText] = useState('');
+    const [backupLog, setBackupLog] = useState<{ tenantId: string; text: string } | null>(null);
     const [backendOk, setBackendOk] = useState(false);
 
     const loadAll = useCallback(async () => {
@@ -118,6 +119,24 @@ export default function TenantsPage() {
     const handleDelete = async (tenant: Tenant) => {
         await fetch(`${BACKEND_URL}/api/tenants/${tenant.id}`, { method: 'DELETE' });
         loadAll();
+    };
+
+    const handleBackup = async (tenant: Tenant) => {
+        setBackupLog({ tenantId: tenant.id, text: 'Creating backup...' });
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants/${tenant.id}/backup`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                setBackupLog({
+                    tenantId: tenant.id,
+                    text: `✓ Backup created: ${data.filename}\n  Tables: ${data.tables}\n  Size: ${(data.sizeBytes / 1024).toFixed(1)}KB`,
+                });
+            } else {
+                setBackupLog({ tenantId: tenant.id, text: `✗ Backup failed: ${data.error}` });
+            }
+        } catch (err) {
+            setBackupLog({ tenantId: tenant.id, text: `Error: ${err}` });
+        }
     };
 
     const statusColor = (s: string) => {
@@ -282,6 +301,11 @@ export default function TenantsPage() {
                                         {logsOpen === tenant.id ? '▲ Hide Logs' : '📋 Logs'}
                                     </button>
                                 )}
+                                {tenant.database && (
+                                    <button className="btn btn-sm" onClick={() => handleBackup(tenant)}>
+                                        💾 Backup
+                                    </button>
+                                )}
                                 <button
                                     className="btn btn-sm"
                                     style={{ marginLeft: 'auto', color: 'var(--accent-red)' }}
@@ -300,6 +324,18 @@ export default function TenantsPage() {
                                     maxHeight: 150, overflowY: 'auto', whiteSpace: 'pre-wrap',
                                 }}>
                                     {deployLog.text}
+                                </pre>
+                            )}
+
+                            {/* Backup log */}
+                            {backupLog && backupLog.tenantId === tenant.id && (
+                                <pre style={{
+                                    marginTop: 10, padding: 10, background: 'var(--bg-primary)',
+                                    borderRadius: 'var(--radius-sm)', fontSize: 11,
+                                    fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)',
+                                    maxHeight: 100, overflowY: 'auto', whiteSpace: 'pre-wrap',
+                                }}>
+                                    {backupLog.text}
                                 </pre>
                             )}
 

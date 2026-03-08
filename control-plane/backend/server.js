@@ -18,6 +18,8 @@ import { promisify } from 'util';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,9 +27,12 @@ const PORT = process.env.PORT || 3002;
 const SPACETIME_URL = process.env.SPACETIME_URL || 'http://localhost:3001';
 const MODULES_DIR = path.resolve(__dirname, '../../');
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
+const BACKUPS_DIR = path.resolve(__dirname, 'backups');
+const JWT_SECRET = process.env.JWT_SECRET || 'spacetime-control-plane-' + randomUUID().slice(0, 8);
 
-// Ensure uploads directory exists
+// Ensure directories exist
 if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!existsSync(BACKUPS_DIR)) mkdirSync(BACKUPS_DIR, { recursive: true });
 
 const app = express();
 app.use(cors());
@@ -538,6 +543,224 @@ app.get('/api/discover', (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Auth & Identity
+// ─────────────────────────────────────────────────────────────
+
+// API keys registry (persists to file)
+const KEYS_PATH = path.resolve(__dirname, 'api-keys.json');
+let apiKeys = [];
+if (existsSync(KEYS_PATH)) apiKeys = JSON.parse(readFileSync(KEYS_PATH, 'utf-8'));
+function saveKeys() { writeFileSync(KEYS_PATH, JSON.stringify(apiKeys, null, 2)); }
+
+// Login (simple — returns JWT)
+app.post('/api/auth/login', (req, res) => {
+    const { password } = req.body;
+    const adminPass = process.env.ADMIN_PASSWORD || 'spacetime';
+    if (password !== adminPass) {
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+    const token = jwt.sign({ role: 'admin', iat: Date.now() }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token, expiresIn: '24h' });
+});
+
+// Verify token
+app.get('/api/auth/verify', (req, res) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return res.status(401).json({ valid: false });
+    try {
+        const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+        res.json({ valid: true, role: decoded.role });
+    } catch {
+        res.status(401).json({ valid: false });
+    }
+});
+
+// Generate API key
+app.post('/api/auth/keys', (req, res) => {
+    const { name, scopes } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name required' });
+
+    const key = {
+        id: randomUUID(),
+        name,
+        key: `stcp_${randomUUID().replace(/-/g, '')}`,
+        scopes: scopes || ['read', 'write', 'deploy'],
+        createdAt: new Date().toISOString(),
+        lastUsedAt: null,
+        active: true,
+    };
+
+    apiKeys.push(key);
+    saveKeys();
+    res.status(201).json(key);
+});
+
+// List API keys
+app.get('/api/auth/keys', (_req, res) => {
+    // Mask the actual key value for security
+    const masked = apiKeys.map(k => ({
+        ...k,
+        key: k.key.slice(0, 8) + '...' + k.key.slice(-4),
+    }));
+    res.json(masked);
+});
+
+// Revoke API key
+app.delete('/api/auth/keys/:id', (req, res) => {
+    const key = apiKeys.find(k => k.id === req.params.id);
+    if (!key) return res.status(404).json({ error: 'Key not found' });
+    key.active = false;
+    saveKeys();
+    res.json({ revoked: key.name });
+});
+
+// Validate API key (middleware helper endpoint)
+app.post('/api/auth/validate-key', (req, res) => {
+    const { apiKey } = req.body;
+    const found = apiKeys.find(k => k.key === apiKey && k.active);
+    if (!found) return res.status(401).json({ valid: false });
+    found.lastUsedAt = new Date().toISOString();
+    saveKeys();
+    res.json({ valid: true, name: found.name, scopes: found.scopes });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Backup & Restore
+// ─────────────────────────────────────────────────────────────
+
+// Export all data from a tenant's tables
+app.post('/api/tenants/:id/backup', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant?.database) return res.status(400).json({ error: 'Not deployed' });
+
+    try {
+        // Get schema to find tables
+        const schemaRes = await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/schema?expand=true`, {
+            signal: AbortSignal.timeout(5000),
+        });
+        if (!schemaRes.ok) return res.status(502).json({ error: 'Could not fetch schema' });
+
+        const schema = await schemaRes.json();
+        const tables = schema?.typespace?.tables || [];
+
+        const backup = {
+            version: 1,
+            tenant: tenant.name,
+            database: tenant.database,
+            timestamp: new Date().toISOString(),
+            tables: {},
+            schema: schema,
+        };
+
+        // Export each table's data
+        for (const table of tables) {
+            try {
+                const sqlRes = await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/sql`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: `SELECT * FROM ${table.name}`,
+                    signal: AbortSignal.timeout(10000),
+                });
+                if (sqlRes.ok) {
+                    backup.tables[table.name] = await sqlRes.json();
+                }
+            } catch { /* skip table */ }
+        }
+
+        // Save to disk
+        const tenantBackupDir = path.join(BACKUPS_DIR, tenant.name);
+        if (!existsSync(tenantBackupDir)) mkdirSync(tenantBackupDir, { recursive: true });
+
+        const filename = `backup-${Date.now()}.json`;
+        writeFileSync(path.join(tenantBackupDir, filename), JSON.stringify(backup, null, 2));
+
+        res.json({
+            success: true,
+            filename,
+            tables: Object.keys(backup.tables).length,
+            sizeBytes: JSON.stringify(backup).length,
+            timestamp: backup.timestamp,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List backups for a tenant
+app.get('/api/tenants/:id/backups', (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const dir = path.join(BACKUPS_DIR, tenant.name);
+    if (!existsSync(dir)) return res.json([]);
+
+    const backups = readdirSync(dir)
+        .filter(f => f.startsWith('backup-') && f.endsWith('.json'))
+        .map(f => {
+            const stat = statSync(path.join(dir, f));
+            return {
+                filename: f,
+                sizeBytes: stat.size,
+                createdAt: stat.birthtime.toISOString(),
+            };
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json(backups);
+});
+
+// Download a specific backup
+app.get('/api/tenants/:id/backups/:filename', (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const filepath = path.join(BACKUPS_DIR, tenant.name, req.params.filename);
+    if (!existsSync(filepath)) return res.status(404).json({ error: 'Backup not found' });
+
+    res.setHeader('Content-Disposition', `attachment; filename=${req.params.filename}`);
+    res.setHeader('Content-Type', 'application/json');
+    res.sendFile(filepath);
+});
+
+// Restore from backup (re-insert data via reducers/SQL)
+app.post('/api/tenants/:id/restore/:filename', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant?.database) return res.status(400).json({ error: 'Not deployed' });
+
+    const filepath = path.join(BACKUPS_DIR, tenant.name, req.params.filename);
+    if (!existsSync(filepath)) return res.status(404).json({ error: 'Backup not found' });
+
+    try {
+        const backup = JSON.parse(readFileSync(filepath, 'utf-8'));
+        const results = { restored: [], errors: [] };
+
+        for (const [tableName, data] of Object.entries(backup.tables)) {
+            try {
+                // Use SQL INSERT for each row
+                const rows = data?.[0]?.rows || [];
+                for (const row of rows) {
+                    const values = row.map(v =>
+                        typeof v === 'string' ? `'${v.replace(/'/g, "''")}' ` : v
+                    ).join(', ');
+                    await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/sql`, {
+                        method: 'POST',
+                        body: `INSERT INTO ${tableName} VALUES (${values})`,
+                        signal: AbortSignal.timeout(5000),
+                    });
+                }
+                results.restored.push({ table: tableName, rows: rows.length });
+            } catch (err) {
+                results.errors.push({ table: tableName, error: err.message });
+            }
+        }
+
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
 
@@ -546,4 +769,6 @@ app.listen(PORT, () => {
     console.log(`SpacetimeDB: ${SPACETIME_URL}`);
     console.log(`Modules dir: ${MODULES_DIR}`);
     console.log(`Tenants: ${tenants.length} registered`);
+    console.log(`API Keys: ${apiKeys.filter(k => k.active).length} active`);
+    console.log(`JWT Secret: ${JWT_SECRET.slice(0, 12)}...`);
 });
