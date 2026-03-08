@@ -6,9 +6,9 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-v2.0.3-purple.svg)
-![MCP](https://img.shields.io/badge/MCP-20_tools-green.svg)
-![Pages](https://img.shields.io/badge/UI-14_pages-blue.svg)
-![API](https://img.shields.io/badge/API-55+_endpoints-orange.svg)
+![MCP](https://img.shields.io/badge/MCP-23_tools-green.svg)
+![Pages](https://img.shields.io/badge/UI-15_pages-blue.svg)
+![API](https://img.shields.io/badge/API-67+_endpoints-orange.svg)
 
 ---
 
