@@ -902,6 +902,182 @@ app.get('/api/policies', (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Webhooks & Notifications
+// ─────────────────────────────────────────────────────────────
+
+const WEBHOOKS_PATH = path.resolve(__dirname, 'webhooks.json');
+let webhooks = [];
+if (existsSync(WEBHOOKS_PATH)) webhooks = JSON.parse(readFileSync(WEBHOOKS_PATH, 'utf-8'));
+function saveWebhooks() { writeFileSync(WEBHOOKS_PATH, JSON.stringify(webhooks, null, 2)); }
+
+// Register webhook
+app.post('/api/webhooks', (req, res) => {
+    const { url, events, name } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL required' });
+
+    const webhook = {
+        id: randomUUID(),
+        name: name || 'webhook',
+        url,
+        events: events || ['deploy.success', 'deploy.failure', 'tenant.created', 'tenant.deleted'],
+        createdAt: new Date().toISOString(),
+        lastTriggered: null,
+        triggerCount: 0,
+        active: true,
+    };
+    webhooks.push(webhook);
+    saveWebhooks();
+    res.status(201).json(webhook);
+});
+
+// List webhooks
+app.get('/api/webhooks', (_req, res) => {
+    res.json(webhooks.map(w => ({ ...w, url: w.url.slice(0, 30) + '...' })));
+});
+
+// Delete webhook
+app.delete('/api/webhooks/:id', (req, res) => {
+    const idx = webhooks.findIndex(w => w.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    webhooks.splice(idx, 1);
+    saveWebhooks();
+    res.json({ deleted: true });
+});
+
+// Toggle webhook
+app.patch('/api/webhooks/:id', (req, res) => {
+    const wh = webhooks.find(w => w.id === req.params.id);
+    if (!wh) return res.status(404).json({ error: 'Not found' });
+    if (req.body.active !== undefined) wh.active = req.body.active;
+    if (req.body.events) wh.events = req.body.events;
+    saveWebhooks();
+    res.json(wh);
+});
+
+// Test webhook
+app.post('/api/webhooks/:id/test', async (req, res) => {
+    const wh = webhooks.find(w => w.id === req.params.id);
+    if (!wh) return res.status(404).json({ error: 'Not found' });
+
+    try {
+        const testRes = await fetch(wh.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event: 'test',
+                timestamp: new Date().toISOString(),
+                source: 'spacetime-control-plane',
+                data: { message: 'Webhook test from Spacetime Control Plane' },
+            }),
+            signal: AbortSignal.timeout(5000),
+        });
+        res.json({ success: testRes.ok, status: testRes.status });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// Fire webhook (internal helper)
+async function fireWebhooks(event, data) {
+    const active = webhooks.filter(w => w.active && w.events.includes(event));
+    for (const wh of active) {
+        try {
+            await fetch(wh.url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event,
+                    timestamp: new Date().toISOString(),
+                    source: 'spacetime-control-plane',
+                    data,
+                }),
+                signal: AbortSignal.timeout(5000),
+            });
+            wh.lastTriggered = new Date().toISOString();
+            wh.triggerCount++;
+        } catch { /* ignore failed webhooks */ }
+    }
+    saveWebhooks();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Dashboard Overview (aggregate everything)
+// ─────────────────────────────────────────────────────────────
+
+app.get('/api/dashboard', async (_req, res) => {
+    const deployed = tenants.filter(t => t.status === 'deployed');
+    const totalDeploys = tenants.reduce((sum, t) => sum + (t.deployHistory?.length || 0), 0);
+    const recentDeploys = tenants
+        .flatMap(t => (t.deployHistory || []).map(d => ({ ...d, tenant: t.name })))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 10);
+
+    // System uptime and health
+    const systemHealth = {
+        backend: 'healthy',
+        spacetimedb: 'unknown',
+        uptime: process.uptime(),
+    };
+
+    try {
+        const pingRes = await fetch(`${SPACETIME_URL}/v1/identity`, {
+            method: 'POST',
+            signal: AbortSignal.timeout(3000),
+        });
+        systemHealth.spacetimedb = (pingRes.ok || pingRes.status === 401 || pingRes.status === 405) ? 'healthy' : 'unreachable';
+    } catch {
+        systemHealth.spacetimedb = 'unreachable';
+    }
+
+    // Quick stats per tenant
+    const tenantQuickStats = await Promise.all(deployed.map(async (t) => {
+        try {
+            const schemaRes = await fetch(
+                `${SPACETIME_URL}/v1/database/${encodeURIComponent(t.database)}/schema?version=9`,
+                { signal: AbortSignal.timeout(3000) }
+            );
+            if (!schemaRes.ok) return { name: t.name, database: t.database, tables: 0, reducers: 0, status: 'error' };
+            const raw = await schemaRes.json();
+            return {
+                name: t.name,
+                database: t.database,
+                tables: (raw.tables || []).length,
+                reducers: (raw.reducers || []).filter(r => !r.lifecycle || typeof r.lifecycle !== 'object').length,
+                status: 'online',
+            };
+        } catch {
+            return { name: t.name, database: t.database, tables: 0, reducers: 0, status: 'error' };
+        }
+    }));
+
+    res.json({
+        system: systemHealth,
+        tenants: {
+            total: tenants.length,
+            deployed: deployed.length,
+            errors: tenants.filter(t => t.status === 'error').length,
+        },
+        deploys: {
+            total: totalDeploys,
+            recent: recentDeploys,
+            successRate: totalDeploys > 0
+                ? (recentDeploys.filter(d => d.success).length / Math.max(recentDeploys.length, 1) * 100).toFixed(0) + '%'
+                : 'N/A',
+        },
+        security: {
+            activeApiKeys: apiKeys.filter(k => k.active).length,
+            rlsPolicies: rlsPolicies.length,
+            enforcedPolicies: rlsPolicies.filter(p => p.enforcement === 'enforced').length,
+        },
+        webhooks: {
+            active: webhooks.filter(w => w.active).length,
+            total: webhooks.length,
+        },
+        tenantStats: tenantQuickStats,
+    });
+});
+
+// ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
 

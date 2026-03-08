@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { ConnectionProvider, useConnection } from './hooks/useConnection';
-import Sidebar, { type Page } from './components/Sidebar';
+import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import ConnectDialog from './components/ConnectDialog';
+import DashboardPage from './pages/DashboardPage';
 import TablesPage from './pages/TablesPage';
 import ReducersPage from './pages/ReducersPage';
 import SqlConsolePage from './pages/SqlConsolePage';
@@ -15,7 +16,7 @@ import PoliciesPage from './pages/PoliciesPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
-  const [activePage, setActivePage] = useState<Page>('tables');
+  const [page, setPage] = useState<'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings'>('dashboard');
   const [showConnect, setShowConnect] = useState(false);
   const { instances } = useConnection();
 
@@ -25,7 +26,9 @@ function AppContent() {
   const shouldShowConnect = !isConnected && !showConnect;
 
   const renderPage = () => {
-    switch (activePage) {
+    switch (page) {
+      case 'dashboard':
+        return <DashboardPage />;
       case 'tables':
         return <TablesPage />;
       case 'reducers':
@@ -53,7 +56,7 @@ function AppContent() {
 
   return (
     <div className="app-layout">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={page} onNavigate={setPage} />
       <div className="app-main">
         <TopBar />
         {renderPage()}
