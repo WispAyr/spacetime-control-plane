@@ -20,7 +20,7 @@ const aiItems: { page: Page; icon: string; label: string }[] = [
 ];
 
 const metaItems: { page: Page; icon: string; label: string }[] = [
-    { page: 'instances', icon: '◎', label: 'Instances' },
+    { page: 'instances', icon: '◎', label: 'Tenants' },
     { page: 'settings', icon: '⚙', label: 'Settings' },
 ];
 

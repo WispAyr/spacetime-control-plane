@@ -6,7 +6,7 @@ import ConnectDialog from './components/ConnectDialog';
 import TablesPage from './pages/TablesPage';
 import ReducersPage from './pages/ReducersPage';
 import SqlConsolePage from './pages/SqlConsolePage';
-import InstancesPage from './pages/InstancesPage';
+import TenantsPage from './pages/TenantsPage';
 import AgentPage from './pages/AgentPage';
 import EventsPage from './pages/EventsPage';
 import SettingsPage from './pages/SettingsPage';
@@ -30,7 +30,7 @@ function AppContent() {
       case 'sql':
         return <SqlConsolePage />;
       case 'instances':
-        return <InstancesPage />;
+        return <TenantsPage />;
       case 'agent':
         return <AgentPage />;
       case 'events':
