@@ -319,6 +319,178 @@ app.get('/api/files', (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Monitoring & Stats
+// ─────────────────────────────────────────────────────────────
+
+// Get stats for a specific tenant via SpacetimeDB HTTP API
+app.get('/api/tenants/:id/stats', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+    if (!tenant.database) return res.status(400).json({ error: 'Not deployed' });
+
+    try {
+        // Get schema
+        const schemaRes = await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/schema?expand=true`, {
+            signal: AbortSignal.timeout(5000),
+        });
+
+        let tables = 0, reducers = 0, totalRows = 0, tableDetails = [];
+
+        if (schemaRes.ok) {
+            const schema = await schemaRes.json();
+            const typespace = schema?.typespace;
+            if (typespace) {
+                // Count tables and reducers from schema
+                tables = typespace.tables?.length || 0;
+                reducers = typespace.reducers?.length || 0;
+
+                // Query each table for row count
+                for (const table of (typespace.tables || [])) {
+                    try {
+                        const sqlRes = await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/sql`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: `SELECT count(*) FROM ${table.name}`,
+                            signal: AbortSignal.timeout(3000),
+                        });
+                        if (sqlRes.ok) {
+                            const rows = await sqlRes.json();
+                            const count = rows?.[0]?.rows?.[0]?.[0] || 0;
+                            totalRows += count;
+                            tableDetails.push({ name: table.name, rows: count, columns: table.columns?.length || 0 });
+                        } else {
+                            tableDetails.push({ name: table.name, rows: 0, columns: table.columns?.length || 0 });
+                        }
+                    } catch {
+                        tableDetails.push({ name: table.name, rows: '?', columns: table.columns?.length || 0 });
+                    }
+                }
+            }
+        }
+
+        res.json({
+            database: tenant.database,
+            tables,
+            reducers,
+            totalRows,
+            tableDetails,
+            status: tenant.status,
+            lastDeployedAt: tenant.lastDeployedAt,
+            deployCount: tenant.deployHistory.length,
+            successfulDeploys: tenant.deployHistory.filter(d => d.success).length,
+            failedDeploys: tenant.deployHistory.filter(d => !d.success).length,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Aggregate overview for all tenants
+app.get('/api/monitoring/overview', async (_req, res) => {
+    const deployed = tenants.filter(t => t.status === 'deployed' && t.database);
+    const overview = {
+        totalTenants: tenants.length,
+        deployedTenants: deployed.length,
+        errorTenants: tenants.filter(t => t.status === 'error').length,
+        totalDeploys: tenants.reduce((sum, t) => sum + t.deployHistory.length, 0),
+        recentDeploys: tenants
+            .flatMap(t => t.deployHistory.map(d => ({ ...d, tenant: t.name })))
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 10),
+        tenantSummaries: [],
+    };
+
+    // Fetch quick stats for each deployed tenant
+    for (const t of deployed) {
+        try {
+            const schemaRes = await fetch(`${SPACETIME_URL}/v1/database/${t.database}/schema?expand=true`, {
+                signal: AbortSignal.timeout(3000),
+            });
+            if (schemaRes.ok) {
+                const schema = await schemaRes.json();
+                const typespace = schema?.typespace;
+                overview.tenantSummaries.push({
+                    name: t.name,
+                    database: t.database,
+                    tables: typespace?.tables?.length || 0,
+                    reducers: typespace?.reducers?.length || 0,
+                    status: 'online',
+                    lastDeployed: t.lastDeployedAt,
+                });
+            } else {
+                overview.tenantSummaries.push({ name: t.name, database: t.database, status: 'unreachable' });
+            }
+        } catch {
+            overview.tenantSummaries.push({ name: t.name, database: t.database, status: 'unreachable' });
+        }
+    }
+
+    res.json(overview);
+});
+
+// Schema snapshot — capture schema at deploy time for migration tracking
+app.get('/api/tenants/:id/schema-snapshot', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant?.database) return res.status(400).json({ error: 'Not deployed' });
+
+    try {
+        const schemaRes = await fetch(`${SPACETIME_URL}/v1/database/${tenant.database}/schema?expand=true`, {
+            signal: AbortSignal.timeout(5000),
+        });
+        if (!schemaRes.ok) return res.status(502).json({ error: 'Could not fetch schema' });
+
+        const schema = await schemaRes.json();
+
+        // Save snapshot
+        const snapshotsDir = path.resolve(__dirname, 'snapshots', tenant.name);
+        if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+        const filename = `schema-${Date.now()}.json`;
+        writeFileSync(path.join(snapshotsDir, filename), JSON.stringify(schema, null, 2));
+
+        // List all snapshots for this tenant
+        const snapshots = readdirSync(snapshotsDir)
+            .filter(f => f.startsWith('schema-'))
+            .sort()
+            .reverse();
+
+        res.json({ current: schema, snapshots, saved: filename });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Compare two schema snapshots
+app.get('/api/tenants/:id/schema-diff', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const snapshotsDir = path.resolve(__dirname, 'snapshots', tenant.name);
+    if (!existsSync(snapshotsDir)) return res.json({ diffs: [], snapshots: [] });
+
+    const snapshots = readdirSync(snapshotsDir).filter(f => f.startsWith('schema-')).sort().reverse();
+    if (snapshots.length < 2) return res.json({ diffs: [], snapshots, message: 'Need at least 2 snapshots' });
+
+    const current = JSON.parse(readFileSync(path.join(snapshotsDir, snapshots[0]), 'utf-8'));
+    const previous = JSON.parse(readFileSync(path.join(snapshotsDir, snapshots[1]), 'utf-8'));
+
+    // Simple diff: compare table names and column counts
+    const currTables = (current?.typespace?.tables || []).map(t => ({ name: t.name, cols: t.columns?.length || 0 }));
+    const prevTables = (previous?.typespace?.tables || []).map(t => ({ name: t.name, cols: t.columns?.length || 0 }));
+
+    const diffs = [];
+    for (const ct of currTables) {
+        const pt = prevTables.find(p => p.name === ct.name);
+        if (!pt) diffs.push({ type: 'added', table: ct.name, columns: ct.cols });
+        else if (pt.cols !== ct.cols) diffs.push({ type: 'modified', table: ct.name, before: pt.cols, after: ct.cols });
+    }
+    for (const pt of prevTables) {
+        if (!currTables.find(c => c.name === pt.name)) diffs.push({ type: 'removed', table: pt.name });
+    }
+
+    res.json({ diffs, snapshots: snapshots.slice(0, 5) });
+});
+
+// ─────────────────────────────────────────────────────────────
 // System
 // ─────────────────────────────────────────────────────────────
 

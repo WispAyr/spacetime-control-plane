@@ -8,6 +8,7 @@ import ReducersPage from './pages/ReducersPage';
 import SqlConsolePage from './pages/SqlConsolePage';
 import TenantsPage from './pages/TenantsPage';
 import AgentPage from './pages/AgentPage';
+import MonitoringPage from './pages/MonitoringPage';
 import EventsPage from './pages/EventsPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -35,6 +36,8 @@ function AppContent() {
         return <AgentPage />;
       case 'events':
         return <EventsPage />;
+      case 'monitoring':
+        return <MonitoringPage />;
       case 'settings':
         return <SettingsPage />;
       default:
