@@ -1,0 +1,17 @@
+{
+  "name": "spacetime-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for SpacetimeDB — exposes database schema, SQL queries, reducer calls, and AI observability as MCP tools",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "spacetime-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.0",
+    "zod": "^3.25.67"
+  }
+}
