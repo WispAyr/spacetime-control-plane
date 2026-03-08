@@ -1,12 +1,14 @@
 # Spacetime Control Plane
 
-A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb.com) applications — with multi-database management, AI agent observability, interactive SQL/reducer tools, and full MCP (Model Context Protocol) integration.
+A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb.com) applications — with multi-tenant management, real-time monitoring, AI agent observability, row-level security policies, backup/restore, and full MCP integration.
 
 > Think Supabase Studio + Retool + AI observability — but for SpacetimeDB.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-v2.0.3-purple.svg)
-![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)
+![MCP](https://img.shields.io/badge/MCP-15_tools-green.svg)
+![Pages](https://img.shields.io/badge/UI-11_pages-blue.svg)
+![API](https://img.shields.io/badge/API-33+_endpoints-orange.svg)
 
 ## Features
 
@@ -29,39 +31,67 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 - **Rules Panel** — Human-editable rules that govern AI behavior (toggle on/off, priority ordering)
 - **AI Chat** — Real-time conversation between humans and AI agents via shared SpacetimeDB tables
 
+### 👥 Tenant Management
+- **Auto-Discovery** — Scans workspace for SpacetimeDB modules
+- **One-Click Deploy** — Register modules and publish to SpacetimeDB from the UI
+- **Deploy History** — Track all deployments with success/failure logs
+- **Log Streaming** — View module logs (batch fetch + SSE streaming)
+- **Backup & Restore** — Full data export per tenant via SQL, download/restore from JSON
+
+### 📈 Monitoring Dashboard
+- **Aggregate Stats** — Tenants, deployed, errors, total deploys — real-time cards
+- **Tenant Health Grid** — Online/offline status indicators per tenant
+- **Click-to-Expand** — Per-table row counts, column counts, deploy success/fail rates
+- **Deploy Timeline** — Recent deploys with ✓/✗ status per tenant
+- **Auto-Refresh** — Polls every 10 seconds (toggleable)
+
+### 🛡️ Row-Level Security
+- **Policy Manager** — Define per-table, per-operation access policies
+- **Enforcement Toggle** — Enable/disable policies without deleting them
+- **Code Generation** — Auto-generates TypeScript guard functions + `enforceRLS` middleware
+- **SpacetimeDB Compatible** — Generated code uses `ReducerContext.sender` identity checks
+
+### 🔐 Security & Auth
+- **JWT Sessions** — Login with admin password, 24-hour tokens
+- **API Keys** — Generate `stcp_*` keys with scoped permissions (read/write/deploy)
+- **Key Management** — Masked display, last-used tracking, one-click revoke
+- **Integration Guide** — Built-in code examples for JWT and API key auth
+
 ### 🔌 MCP Server
-- **9 MCP Tools** — Full SpacetimeDB access for any MCP-compatible AI (Claude, Gemini, etc.)
+- **15 MCP Tools** — Full SpacetimeDB + Control Plane access for any MCP-compatible AI
 - **stdio Transport** — Drop-in local integration
 - **Zero Config** — Just point it at your SpacetimeDB URL
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                  Control Plane UI                     │
-│  ┌─────────┬──────────┬─────────┬──────────────────┐ │
-│  │ Tables  │ Reducers │   SQL   │   AI Agent/Chat  │ │
-│  └────┬────┴────┬─────┴────┬────┴────────┬─────────┘ │
-│       │         │          │             │            │
-│  ┌────▼─────────▼──────────▼─────────────▼─────────┐ │
-│  │           SpacetimeDB HTTP Client               │ │
-│  │              (v2.0.3 API /v1/*)                  │ │
-│  └────────────────────┬────────────────────────────┘ │
-└───────────────────────┼──────────────────────────────┘
-                        │
-          ┌─────────────▼──────────────┐
-          │     SpacetimeDB :3001      │
-          │  ┌──────────────────────┐  │
-          │  │   App Module A       │  │  ← your app
-          │  │   App Module B       │  │  ← another app
-          │  │   Control Plane AI   │  │  ← AI observability
-          │  └──────────────────────┘  │
-          └─────────────▲──────────────┘
-                        │
-          ┌─────────────┴──────────────┐
-          │      MCP Server (stdio)    │
-          │   9 tools for AI agents    │
-          └────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      Control Plane UI (11 pages)                 │
+│  ┌──────┬──────┬─────┬──────┬──────┬───────┬───────┬──────────┐ │
+│  │Tables│Reduc.│ SQL │Agent │Events│Tenants│Monitor│ Policies │ │
+│  └──┬───┴──┬───┴──┬──┴──┬───┴──┬───┴───┬───┴───┬───┴────┬─────┘ │
+│     └──────┴──────┴─────┴──────┴───────┴───────┴────────┘       │
+│                           │                                       │
+│  ┌────────────────────────▼──────────────────────────────────┐   │
+│  │              Backend Service (:3002)                        │   │
+│  │  33+ REST endpoints: tenants, deploy, logs, monitoring,    │   │
+│  │  auth, backup, schema, RLS policies, files                 │   │
+│  └────────────────────────┬──────────────────────────────────┘   │
+└───────────────────────────┼──────────────────────────────────────┘
+                            │
+          ┌─────────────────▼───────────────┐
+          │       SpacetimeDB :3001         │
+          │  ┌───────────────────────────┐  │
+          │  │   App Module A            │  │  ← your app
+          │  │   App Module B            │  │  ← another app
+          │  │   Control Plane AI Module │  │  ← AI observability
+          │  └───────────────────────────┘  │
+          └─────────────────▲───────────────┘
+                            │
+          ┌─────────────────┴───────────────┐
+          │       MCP Server (stdio)        │
+          │    15 tools for AI agents       │
+          └─────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -77,8 +107,6 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 spacetime start
 ```
 
-This starts a local instance on `http://localhost:3000` (or `:3001` depending on your config).
-
 ### 2. Publish a Test Module
 
 ```bash
@@ -90,9 +118,15 @@ spacetime publish test-module --server http://localhost:3001
 ### 3. Start the Control Plane
 
 ```bash
+# Frontend
 cd control-plane
 npm install
 npm run dev
+
+# Backend (required for tenant management, monitoring, auth, backup)
+cd control-plane/backend
+npm install
+npm start
 ```
 
 Open `http://localhost:5174` → Connect to your SpacetimeDB instance.
@@ -105,30 +139,6 @@ npm install
 SPACETIME_URL=http://localhost:3001 node index.js
 ```
 
-## Project Structure
-
-```
-spacetime-control-plane/
-├── control-plane/              # React + Vite frontend
-│   ├── src/
-│   │   ├── components/         # Sidebar, TopBar, ConnectDialog
-│   │   ├── hooks/              # useConnection (multi-instance/multi-db context)
-│   │   ├── lib/                # SpacetimeDB HTTP client
-│   │   ├── pages/              # TablesPage, ReducersPage, SqlConsolePage,
-│   │   │                       # AgentPage, EventsPage, SettingsPage, InstancesPage
-│   │   └── test/               # Vitest setup
-│   └── mcp-server/             # MCP server (Node.js, stdio)
-│       ├── index.js            # 9 tools + 1 resource
-│       └── README.md           # MCP configuration guide
-│
-├── modules/                    # SpacetimeDB server modules
-│   ├── test-module/            # Simple person table + reducers
-│   ├── inventory-app/          # Item + task tables with CRUD
-│   └── control-plane-module/   # AI observability (agent_action, agent_rule, chat_message)
-│
-└── README.md                   # This file
-```
-
 ## Pages
 
 | Page | Sidebar | Description |
@@ -138,12 +148,50 @@ spacetime-control-plane/
 | **SQL** | > | Write SQL, execute with ⌘↵, results as table |
 | **AI Agent** | ◉ | Activity feed (approve/reject) + rules panel (toggle) |
 | **Events** | ⚡ | AI chat with message bubbles |
-| **Instances** | ◎ | Manage SpacetimeDB connections |
+| **Tenants** | ◎ | Manage modules, deploy, logs, backup |
+| **Monitor** | 📊 | Real-time stats, health grid, deploy timeline |
+| **Policies** | 🛡️ | Row-level security policies with code generation |
+| **Security** | 🔐 | JWT sessions, API key management |
 | **Settings** | ⚙ | Topology graph + database overview cards |
 
-## MCP Integration
+## Backend API
 
-The MCP server exposes your SpacetimeDB instance to AI agents. Add to your AI tool configuration:
+The backend service (`control-plane/backend/server.js`) provides 33+ REST endpoints:
+
+| Category | Endpoints | Description |
+|----------|-----------|-------------|
+| **Tenants** | CRUD, register, discover | Manage tenant modules |
+| **Deploy** | POST publish | One-click deploy via CLI |
+| **Logs** | GET batch, SSE stream | Module log viewing |
+| **Monitoring** | Overview, per-tenant stats | Real-time health data |
+| **Schema** | Snapshot, diff | Migration tracking |
+| **Auth** | Login, verify, key CRUD | JWT + API key auth |
+| **Backup** | Create, list, download, restore | Full data export/import |
+| **RLS** | Policy CRUD, codegen | Row-level security |
+| **Files** | Upload, list | Media reference storage |
+| **System** | Health check | Backend status |
+
+## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `spacetime_ping` | Check if SpacetimeDB is reachable |
+| `spacetime_list_databases` | List all known databases with live stats |
+| `spacetime_add_database` | Register a database name |
+| `spacetime_get_schema` | Full schema (tables + reducers) as JSON |
+| `spacetime_list_tables` | Table listing with column details |
+| `spacetime_describe_table` | Detailed table info + sample rows |
+| `spacetime_list_reducers` | Reducer signatures |
+| `spacetime_query` | Run SQL, get markdown table results |
+| `spacetime_call_reducer` | Call a reducer with JSON arguments |
+| `cp_list_tenants` | List registered tenants with status |
+| `cp_deploy_tenant` | Deploy a module to SpacetimeDB |
+| `cp_monitoring_overview` | Aggregate stats for all tenants |
+| `cp_backup_tenant` | Full data backup for a tenant |
+| `cp_create_api_key` | Generate scoped API key |
+| `cp_add_rls_policy` | Create row-level security policy |
+
+### MCP Configuration
 
 ```json
 {
@@ -160,34 +208,24 @@ The MCP server exposes your SpacetimeDB instance to AI agents. Add to your AI to
 }
 ```
 
-### Available MCP Tools
+## Environment Variables
 
-| Tool | Description |
-|------|-------------|
-| `spacetime_ping` | Check if SpacetimeDB is reachable |
-| `spacetime_list_databases` | List all known databases with live stats |
-| `spacetime_add_database` | Register a database name |
-| `spacetime_get_schema` | Full schema (tables + reducers) as JSON |
-| `spacetime_list_tables` | Table listing with column details |
-| `spacetime_describe_table` | Detailed table info + sample rows |
-| `spacetime_list_reducers` | Reducer signatures |
-| `spacetime_query` | Run SQL, get markdown table results |
-| `spacetime_call_reducer` | Call a reducer with JSON arguments |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPACETIME_URL` | `http://localhost:3001` | SpacetimeDB instance URL |
+| `PORT` | `3002` | Backend service port |
+| `ADMIN_PASSWORD` | `spacetime` | Admin login password |
+| `JWT_SECRET` | auto-generated | JWT signing secret |
+| `BACKEND_URL` | `http://localhost:3002` | MCP → backend URL |
 
 ## Testing
 
 ```bash
 cd control-plane
-npm test              # Run all 49 tests
+npm test              # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # With coverage report
 ```
-
-Test coverage includes:
-- **Schema parsing** — SpacetimeDB v9 typespace resolution, lifecycle reducers, private tables
-- **SQL result parsing** — COUNT, empty results, null handling
-- **HTTP client** — Mocked fetch for ping, getSchema, sql, callReducer
-- **Components** — Sidebar navigation, active state, AI indicator
 
 ## Tech Stack
 
@@ -195,20 +233,12 @@ Test coverage includes:
 |-------|-----------|
 | Frontend | React 19 + TypeScript + Vite |
 | Styling | Vanilla CSS (glassmorphism design system) |
+| Backend | Node.js + Express |
+| Auth | JWT (jsonwebtoken) + API keys |
 | Testing | Vitest + React Testing Library |
 | Database | SpacetimeDB v2.0.3 |
 | Modules | SpacetimeDB TypeScript SDK |
 | MCP | @modelcontextprotocol/sdk (stdio) |
-
-## Design System
-
-The UI uses a custom glassmorphism design system with:
-- Dark theme with glass blur effects
-- JetBrains Mono for code, Inter for UI text
-- Accent palette: blue, green, amber, red, purple, cyan
-- Panel system with headers, bodies, and scrollable content
-- Badge system for status indicators
-- Fade-in animations
 
 ## Contributing
 

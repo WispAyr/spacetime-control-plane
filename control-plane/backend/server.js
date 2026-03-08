@@ -761,6 +761,147 @@ app.post('/api/tenants/:id/restore/:filename', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Row-Level Security (RLS) Policies
+// ─────────────────────────────────────────────────────────────
+
+// Policy registry (persists to file)
+const POLICIES_PATH = path.resolve(__dirname, 'rls-policies.json');
+let rlsPolicies = [];
+if (existsSync(POLICIES_PATH)) rlsPolicies = JSON.parse(readFileSync(POLICIES_PATH, 'utf-8'));
+function savePolicies() { writeFileSync(POLICIES_PATH, JSON.stringify(rlsPolicies, null, 2)); }
+
+// List policies for a tenant
+app.get('/api/tenants/:id/policies', (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+    const policies = rlsPolicies.filter(p => p.tenantId === tenant.id);
+    res.json(policies);
+});
+
+// Create a policy
+app.post('/api/tenants/:id/policies', (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const { table, operation, condition, description, enforcement } = req.body;
+    if (!table || !operation) return res.status(400).json({ error: 'table and operation required' });
+
+    const policy = {
+        id: randomUUID(),
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        table,
+        operation, // 'read' | 'insert' | 'update' | 'delete' | 'all'
+        condition: condition || 'owner_id == ctx.sender', // SpacetimeDB identity check
+        description: description || '',
+        enforcement: enforcement || 'enforced', // 'enforced' | 'permissive' | 'disabled'
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+
+    rlsPolicies.push(policy);
+    savePolicies();
+    res.status(201).json(policy);
+});
+
+// Update a policy
+app.patch('/api/tenants/:id/policies/:policyId', (req, res) => {
+    const policy = rlsPolicies.find(p => p.id === req.params.policyId);
+    if (!policy) return res.status(404).json({ error: 'Policy not found' });
+
+    const { condition, description, enforcement, operation } = req.body;
+    if (condition !== undefined) policy.condition = condition;
+    if (description !== undefined) policy.description = description;
+    if (enforcement !== undefined) policy.enforcement = enforcement;
+    if (operation !== undefined) policy.operation = operation;
+    policy.updatedAt = new Date().toISOString();
+    savePolicies();
+    res.json(policy);
+});
+
+// Delete a policy
+app.delete('/api/tenants/:id/policies/:policyId', (req, res) => {
+    const idx = rlsPolicies.findIndex(p => p.id === req.params.policyId);
+    if (idx === -1) return res.status(404).json({ error: 'Policy not found' });
+    rlsPolicies.splice(idx, 1);
+    savePolicies();
+    res.json({ deleted: true });
+});
+
+// Generate SpacetimeDB reducer guard code from policies
+app.get('/api/tenants/:id/policies/codegen', (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const policies = rlsPolicies.filter(p => p.tenantId === tenant.id && p.enforcement === 'enforced');
+
+    if (policies.length === 0) {
+        return res.json({ code: '// No enforced RLS policies defined', policies: 0 });
+    }
+
+    // Group by table
+    const byTable = {};
+    for (const p of policies) {
+        if (!byTable[p.table]) byTable[p.table] = [];
+        byTable[p.table].push(p);
+    }
+
+    let code = `// Auto-generated RLS guards for ${tenant.name}\n`;
+    code += `// Generated: ${new Date().toISOString()}\n`;
+    code += `// Policies: ${policies.length}\n\n`;
+    code += `import { ReducerContext, Identity } from "@clockworklabs/spacetimedb-sdk";\n\n`;
+
+    for (const [table, tablePolicies] of Object.entries(byTable)) {
+        const className = table.charAt(0).toUpperCase() + table.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+        code += `// ─── ${table} policies ───\n`;
+
+        for (const policy of tablePolicies) {
+            const fnName = `check_${table}_${policy.operation}`;
+            const ops = policy.operation === 'all' ? ['read', 'insert', 'update', 'delete'] : [policy.operation];
+
+            for (const op of ops) {
+                code += `\n/**\n * RLS: ${policy.description || `${op} guard on ${table}`}\n`;
+                code += ` * Condition: ${policy.condition}\n */\n`;
+                code += `function guard_${table}_${op}(ctx: ReducerContext, row: ${className}): boolean {\n`;
+                code += `    return ${policy.condition.replace(/ctx\.sender/g, 'ctx.sender')};\n`;
+                code += `}\n`;
+            }
+        }
+        code += `\n`;
+    }
+
+    // Add middleware-style wrapper
+    code += `// ─── RLS middleware ───\n`;
+    code += `function enforceRLS(ctx: ReducerContext, table: string, operation: string, row: any): boolean {\n`;
+    code += `    const guards: Record<string, Record<string, (ctx: ReducerContext, row: any) => boolean>> = {\n`;
+
+    for (const [table, tablePolicies] of Object.entries(byTable)) {
+        code += `        "${table}": {\n`;
+        for (const policy of tablePolicies) {
+            const ops = policy.operation === 'all' ? ['read', 'insert', 'update', 'delete'] : [policy.operation];
+            for (const op of ops) {
+                code += `            "${op}": guard_${table}_${op},\n`;
+            }
+        }
+        code += `        },\n`;
+    }
+
+    code += `    };\n`;
+    code += `    const guard = guards[table]?.[operation];\n`;
+    code += `    if (!guard) return true; // No policy = allow\n`;
+    code += `    return guard(ctx, row);\n`;
+    code += `}\n`;
+
+    res.json({ code, policies: policies.length, tables: Object.keys(byTable).length });
+});
+
+// List all policies across all tenants
+app.get('/api/policies', (_req, res) => {
+    res.json(rlsPolicies);
+});
+
+// ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
 

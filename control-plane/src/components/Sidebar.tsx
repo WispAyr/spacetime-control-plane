@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-type Page = 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'instances' | 'monitoring' | 'security' | 'settings';
+type Page = 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings';
 
 interface SidebarProps {
     activePage: Page;
@@ -22,6 +22,7 @@ const aiItems: { page: Page; icon: string; label: string }[] = [
 const metaItems: { page: Page; icon: string; label: string }[] = [
     { page: 'instances', icon: '◎', label: 'Tenants' },
     { page: 'monitoring', icon: '📊', label: 'Monitor' },
+    { page: 'policies', icon: '🛡️', label: 'Policies' },
     { page: 'security', icon: '🔐', label: 'Security' },
     { page: 'settings', icon: '⚙', label: 'Settings' },
 ];

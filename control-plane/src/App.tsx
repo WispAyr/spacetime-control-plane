@@ -11,6 +11,7 @@ import AgentPage from './pages/AgentPage';
 import MonitoringPage from './pages/MonitoringPage';
 import EventsPage from './pages/EventsPage';
 import SecurityPage from './pages/SecurityPage';
+import PoliciesPage from './pages/PoliciesPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
@@ -39,6 +40,8 @@ function AppContent() {
         return <EventsPage />;
       case 'monitoring':
         return <MonitoringPage />;
+      case 'policies':
+        return <PoliciesPage />;
       case 'security':
         return <SecurityPage />;
       case 'settings':

@@ -489,6 +489,143 @@ server.tool(
     }
 );
 
+
+// ── Control Plane Tools (via backend service) ────────────────
+
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3002';
+
+server.tool(
+    'cp_list_tenants',
+    'List all registered tenants in the control plane with their status and database info',
+    {},
+    async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants`);
+            if (!res.ok) throw new Error('Backend unreachable');
+            const tenants = await res.json();
+            const lines = tenants.map(t =>
+                `${t.status === 'deployed' ? '🟢' : '🔴'} ${t.name} (db: ${t.database || 'none'}) — ${t.status}, ${t.deployHistory.length} deploys`
+            );
+            return {
+                content: [{ type: 'text', text: tenants.length > 0 ? lines.join('\n') : 'No tenants registered' }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Backend error: ${err.message}. Is the backend running on ${BACKEND_URL}?` }], isError: true };
+        }
+    }
+);
+
+server.tool(
+    'cp_deploy_tenant',
+    'Deploy a registered tenant module to SpacetimeDB',
+    { tenantId: z.string().describe('Tenant UUID') },
+    async ({ tenantId }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants/${tenantId}/deploy`, { method: 'POST' });
+            const data = await res.json();
+            return {
+                content: [{ type: 'text', text: data.success ? `✓ Deployed: ${data.output}` : `✗ Failed: ${data.error}` }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.tool(
+    'cp_monitoring_overview',
+    'Get aggregate monitoring stats for all tenants — counts, deploy history, health',
+    {},
+    async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/monitoring/overview`);
+            if (!res.ok) throw new Error('Backend unreachable');
+            const data = await res.json();
+            const summary = [
+                `Total tenants: ${data.totalTenants}`,
+                `Deployed: ${data.deployedTenants}`,
+                `Errors: ${data.errorTenants}`,
+                `Total deploys: ${data.totalDeploys}`,
+                `\nTenant summaries:`,
+                ...data.tenantSummaries.map(t =>
+                    `  ${t.status === 'online' ? '🟢' : '🔴'} ${t.name}: ${t.tables} tables, ${t.reducers} reducers`
+                ),
+            ];
+            return { content: [{ type: 'text', text: summary.join('\n') }] };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.tool(
+    'cp_backup_tenant',
+    'Create a full backup of a tenant\'s data (exports all tables via SQL)',
+    { tenantId: z.string().describe('Tenant UUID') },
+    async ({ tenantId }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants/${tenantId}/backup`, { method: 'POST' });
+            const data = await res.json();
+            return {
+                content: [{
+                    type: 'text', text: data.success
+                        ? `✓ Backup: ${data.filename} (${data.tables} tables, ${(data.sizeBytes / 1024).toFixed(1)}KB)`
+                        : `✗ Backup failed: ${data.error}`
+                }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.tool(
+    'cp_create_api_key',
+    'Generate a new API key for programmatic access to the control plane',
+    { name: z.string().describe('Key name (e.g. "ci-pipeline")') },
+    async ({ name }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/auth/keys`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const key = await res.json();
+            return {
+                content: [{ type: 'text', text: `✓ API Key created:\n  Name: ${key.name}\n  Key: ${key.key}\n  Scopes: ${key.scopes.join(', ')}` }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
+server.tool(
+    'cp_add_rls_policy',
+    'Add a row-level security policy to a tenant\'s table',
+    {
+        tenantId: z.string().describe('Tenant UUID'),
+        table: z.string().describe('Table name'),
+        operation: z.enum(['all', 'read', 'insert', 'update', 'delete']).describe('Operation to guard'),
+        condition: z.string().describe('Guard condition (e.g. "owner_id == ctx.sender")'),
+    },
+    async ({ tenantId, table, operation, condition }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants/${tenantId}/policies`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table, operation, condition }),
+            });
+            const policy = await res.json();
+            return {
+                content: [{ type: 'text', text: `✓ RLS policy created: ${operation.toUpperCase()} on ${table} where ${condition}` }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        }
+    }
+);
+
 // ── Resources ────────────────────────────────────────────────
 
 server.resource(
