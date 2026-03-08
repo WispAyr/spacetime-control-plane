@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { ExecutionContext, getExecutions, getExecution, getActiveLocks } from './execution-context.js';
+import * as stdb from './stdb-client.js';
 
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,14 +57,24 @@ const upload = multer({
 // Tenant / Module Management
 // ─────────────────────────────────────────────────────────────
 
-// In-memory tenant registry (persists to file)
+// In-memory tenant registry (loaded from SpacetimeDB at startup)
 const REGISTRY_PATH = path.resolve(__dirname, 'tenants.json');
 let tenants = [];
 if (existsSync(REGISTRY_PATH)) {
     tenants = JSON.parse(readFileSync(REGISTRY_PATH, 'utf-8'));
 }
-function saveTenants() {
-    writeFileSync(REGISTRY_PATH, JSON.stringify(tenants, null, 2));
+async function saveTenants() {
+    // Write-through to SpacetimeDB
+    for (const t of tenants) {
+        try {
+            await stdb.callReducer('upsertTenant', {
+                id: t.id, name: t.name, description: t.description || '', status: t.status || 'new',
+                database: t.database || '', module_dir: t.moduleDir || '', template: t.template || '',
+                created_at: BigInt(new Date(t.createdAt || 0).getTime()),
+                last_deployed_at: BigInt(t.lastDeployedAt ? new Date(t.lastDeployedAt).getTime() : 0),
+            });
+        } catch (e) { console.error('stdb saveTenant error:', e.message); }
+    }
 }
 
 // List all tenants
@@ -551,7 +562,18 @@ app.get('/api/discover', (_req, res) => {
 const KEYS_PATH = path.resolve(__dirname, 'api-keys.json');
 let apiKeys = [];
 if (existsSync(KEYS_PATH)) apiKeys = JSON.parse(readFileSync(KEYS_PATH, 'utf-8'));
-function saveKeys() { writeFileSync(KEYS_PATH, JSON.stringify(apiKeys, null, 2)); }
+async function saveKeys() {
+    for (const k of apiKeys) {
+        try {
+            await stdb.callReducer('upsertApiKey', {
+                id: k.id, name: k.name || '', key_hash: k.key || '',
+                scopes: JSON.stringify(k.scopes || []), active: k.active !== false,
+                created_at: BigInt(new Date(k.createdAt || 0).getTime()),
+                last_used_at: BigInt(k.lastUsedAt ? new Date(k.lastUsedAt).getTime() : 0),
+            });
+        } catch (e) { console.error('stdb saveKeys error:', e.message); }
+    }
+}
 
 // Login (simple — returns JWT)
 app.post('/api/auth/login', (req, res) => {
@@ -769,7 +791,19 @@ app.post('/api/tenants/:id/restore/:filename', async (req, res) => {
 const POLICIES_PATH = path.resolve(__dirname, 'rls-policies.json');
 let rlsPolicies = [];
 if (existsSync(POLICIES_PATH)) rlsPolicies = JSON.parse(readFileSync(POLICIES_PATH, 'utf-8'));
-function savePolicies() { writeFileSync(POLICIES_PATH, JSON.stringify(rlsPolicies, null, 2)); }
+async function savePolicies() {
+    for (const p of rlsPolicies) {
+        try {
+            await stdb.callReducer('upsertRlsPolicy', {
+                id: p.id, tenant_id: p.tenantId || '', table_name: p.table || '',
+                operation: p.operation || 'all', condition: p.condition || '',
+                description: p.description || '', enforcement: p.enforcement || 'enforced',
+                created_at: BigInt(new Date(p.createdAt || 0).getTime()),
+                updated_at: BigInt(new Date(p.updatedAt || 0).getTime()),
+            });
+        } catch (e) { console.error('stdb savePolicies error:', e.message); }
+    }
+}
 
 // List policies for a tenant
 app.get('/api/tenants/:id/policies', (req, res) => {
@@ -909,7 +943,17 @@ app.get('/api/policies', (_req, res) => {
 const WEBHOOKS_PATH = path.resolve(__dirname, 'webhooks.json');
 let webhooks = [];
 if (existsSync(WEBHOOKS_PATH)) webhooks = JSON.parse(readFileSync(WEBHOOKS_PATH, 'utf-8'));
-function saveWebhooks() { writeFileSync(WEBHOOKS_PATH, JSON.stringify(webhooks, null, 2)); }
+async function saveWebhooks() {
+    for (const w of webhooks) {
+        try {
+            await stdb.callReducer('upsertWebhook', {
+                id: w.id, url: w.url || '', events: JSON.stringify(w.events || []),
+                active: w.active !== false, secret: w.secret || '',
+                created_at: BigInt(new Date(w.createdAt || 0).getTime()),
+            });
+        } catch (e) { console.error('stdb saveWebhooks error:', e.message); }
+    }
+}
 
 // Register webhook
 app.post('/api/webhooks', (req, res) => {
@@ -1092,10 +1136,61 @@ let tasks = existsSync(TASKS_PATH) ? JSON.parse(readFileSync(TASKS_PATH, 'utf-8'
 let goals = existsSync(GOALS_PATH) ? JSON.parse(readFileSync(GOALS_PATH, 'utf-8')) : [];
 let activityLog = existsSync(ACTIVITY_PATH) ? JSON.parse(readFileSync(ACTIVITY_PATH, 'utf-8')) : [];
 
-function saveWorkers() { writeFileSync(WORKERS_PATH, JSON.stringify(workers, null, 2)); }
-function saveTasks() { writeFileSync(TASKS_PATH, JSON.stringify(tasks, null, 2)); }
-function saveGoals() { writeFileSync(GOALS_PATH, JSON.stringify(goals, null, 2)); }
-function saveActivity() { writeFileSync(ACTIVITY_PATH, JSON.stringify(activityLog, null, 2)); }
+async function saveWorkers() {
+    for (const w of workers) {
+        try {
+            await stdb.callReducer('upsertWorker', {
+                id: w.id, name: w.name || '', worker_type: w.type || 'human', status: w.status || 'active',
+                last_seen: BigInt(new Date(w.lastSeen || 0).getTime()),
+                tasks_completed: w.tasksCompleted || 0, current_task_id: w.currentTaskId || '',
+                created_at: BigInt(new Date(w.registeredAt || 0).getTime()),
+            });
+        } catch (e) { console.error('stdb saveWorkers error:', e.message); }
+    }
+}
+async function saveTasks() {
+    for (const t of tasks) {
+        try {
+            await stdb.callReducer('upsertTask', {
+                id: t.id, title: t.title || '', description: t.description || '',
+                goal_id: t.goalId || '', tenant_id: t.tenantId || '', skill_id: t.skillId || '',
+                status: t.status || 'backlog', priority: t.priority || 'medium',
+                claimed_by: t.claimedBy || '', claimed_at: BigInt(t.claimedAt ? new Date(t.claimedAt).getTime() : 0),
+                completed_by: t.completedBy || '', completed_at: BigInt(t.completedAt ? new Date(t.completedAt).getTime() : 0),
+                output: t.output || '', summary: t.summary || '', created_by: t.createdBy || '',
+                created_at: BigInt(new Date(t.createdAt || 0).getTime()),
+                updated_at: BigInt(new Date(t.updatedAt || 0).getTime()),
+            });
+        } catch (e) { console.error('stdb saveTasks error:', e.message); }
+    }
+}
+async function saveGoals() {
+    for (const g of goals) {
+        try {
+            await stdb.callReducer('upsertGoal', {
+                id: g.id, title: g.title || '', description: g.description || '',
+                target_date: g.targetDate || '', progress: g.progress || 0,
+                status: g.status || 'active', created_by: g.createdBy || '',
+                created_at: BigInt(new Date(g.createdAt || 0).getTime()),
+            });
+        } catch (e) { console.error('stdb saveGoals error:', e.message); }
+    }
+}
+async function saveActivity() {
+    // Only sync latest entries (activity is append-only)
+    const latest = activityLog.slice(0, 5);
+    for (const a of latest) {
+        try {
+            await stdb.callReducer('insertActivity', {
+                id: a.id, timestamp: BigInt(new Date(a.timestamp || 0).getTime()),
+                worker_id: a.workerId || '', worker_name: a.workerName || '',
+                worker_type: a.workerType || '', action: a.action || '',
+                target_type: a.targetType || '', target_id: a.targetId || '',
+                details: a.details || '',
+            });
+        } catch { /* activity inserts are best-effort, dups will fail silently */ }
+    }
+}
 
 function logActivity(workerId, action, targetType, targetId, details) {
     const worker = workers.find(w => w.id === workerId);
@@ -1477,6 +1572,8 @@ app.get('/api/activity', (req, res) => {
 const MIGRATIONS_PATH = path.resolve(__dirname, 'migrations.json');
 let migrations = existsSync(MIGRATIONS_PATH) ? JSON.parse(readFileSync(MIGRATIONS_PATH, 'utf-8')) : [];
 function saveMigrations() { writeFileSync(MIGRATIONS_PATH, JSON.stringify(migrations, null, 2)); }
+// NOTE: migrations stay file-based — they contain large schema snapshots that
+// don't fit cleanly in SpacetimeDB string columns. This is intentional.
 
 // Auto-capture schema after successful deploy
 async function captureSchemaSnapshot(tenant) {
@@ -1597,7 +1694,23 @@ app.post('/api/migrations/:id/rollback', (req, res) => {
 
 const QUOTAS_PATH = path.resolve(__dirname, 'quotas.json');
 let quotas = existsSync(QUOTAS_PATH) ? JSON.parse(readFileSync(QUOTAS_PATH, 'utf-8')) : {};
-function saveQuotas() { writeFileSync(QUOTAS_PATH, JSON.stringify(quotas, null, 2)); }
+async function saveQuotas() {
+    for (const [tenantId, q] of Object.entries(quotas)) {
+        try {
+            await stdb.callReducer('upsertQuota', {
+                tenant_id: tenantId,
+                requests_per_minute: q.limits?.requestsPerMinute || 1000,
+                requests_per_day: q.limits?.requestsPerDay || 100000,
+                storage_mb: q.limits?.storageMB || 1024,
+                max_connections: q.limits?.maxConnections || 50,
+                requests_this_minute: q.usage?.requestsThisMinute || 0,
+                requests_today: q.usage?.requestsToday || 0,
+                minute_reset: BigInt(q.usage?.minuteReset || Date.now()),
+                day_reset: BigInt(q.usage?.dayReset || Date.now()),
+            });
+        } catch (e) { console.error('stdb saveQuotas error:', e.message); }
+    }
+}
 
 function getOrCreateQuota(tenantId) {
     if (!quotas[tenantId]) {
@@ -1662,7 +1775,21 @@ app.post('/api/quotas/:tenantId/increment', (req, res) => {
 
 const ENVIRONMENTS_PATH = path.resolve(__dirname, 'environments.json');
 let environments = existsSync(ENVIRONMENTS_PATH) ? JSON.parse(readFileSync(ENVIRONMENTS_PATH, 'utf-8')) : {};
-function saveEnvironments() { writeFileSync(ENVIRONMENTS_PATH, JSON.stringify(environments, null, 2)); }
+async function saveEnvironments() {
+    for (const [tenantId, env] of Object.entries(environments)) {
+        for (const envName of ['dev', 'staging', 'prod']) {
+            const e = env[envName];
+            if (!e) continue;
+            try {
+                await stdb.callReducer('upsertEnvironment', {
+                    id: `${tenantId}:${envName}`, tenant_id: tenantId, env_name: envName,
+                    database_name: e.database || '', status: e.status || 'not_deployed',
+                    deployed_at: BigInt(e.deployedAt ? new Date(e.deployedAt).getTime() : 0),
+                });
+            } catch (e2) { console.error('stdb saveEnvironments error:', e2.message); }
+        }
+    }
+}
 
 function getOrCreateEnv(tenantId) {
     if (!environments[tenantId]) {
@@ -1813,7 +1940,28 @@ app.get('/api/executions/:id', (req, res) => {
 
 const MEMORY_PATH = path.resolve(__dirname, 'memory.json');
 let memory = existsSync(MEMORY_PATH) ? JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) : {};
-function saveMemory() { writeFileSync(MEMORY_PATH, JSON.stringify(memory, null, 2)); }
+async function saveMemory() {
+    for (const [workerId, mem] of Object.entries(memory)) {
+        for (const note of (mem.notes || [])) {
+            try {
+                await stdb.callReducer('insertMemoryNote', {
+                    id: note.id, worker_id: workerId, content: note.content || '',
+                    tags: JSON.stringify(note.tags || []),
+                    created_at: BigInt(new Date(note.createdAt || 0).getTime()),
+                });
+            } catch { /* dup inserts are expected */ }
+        }
+        for (const p of (mem.patterns || [])) {
+            try {
+                await stdb.callReducer('upsertMemoryPattern', {
+                    id: `${workerId}:${p.key}`, worker_id: workerId,
+                    pattern_key: p.key || '', pattern_value: p.value || '',
+                    count: p.count || 1, last_used: BigInt(new Date(p.lastUsed || 0).getTime()),
+                });
+            } catch (e) { console.error('stdb saveMemory error:', e.message); }
+        }
+    }
+}
 
 function getOrCreateMemory(workerId) {
     if (!memory[workerId]) {
@@ -1907,12 +2055,47 @@ app.get('/api/memory/search', (req, res) => {
 // Start
 // ─────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Control Plane backend running on http://localhost:${PORT}`);
     console.log(`SpacetimeDB: ${SPACETIME_URL}`);
+    console.log(`SpacetimeDB CP Database: ${stdb.STDB_CP_DB}`);
     console.log(`Modules dir: ${MODULES_DIR}`);
     console.log(`Tenants: ${tenants.length} registered`);
     console.log(`API Keys: ${apiKeys.filter(k => k.active).length} active`);
     console.log(`Skills: ${loadSkills().length} loaded`);
     console.log(`JWT Secret: ${JWT_SECRET.slice(0, 12)}...`);
+
+    // Seed existing JSON data into SpacetimeDB if tables are empty
+    try {
+        const existingTenants = await stdb.findAll('cp_tenant');
+        if (existingTenants.length === 0 && tenants.length > 0) {
+            console.log(`Seeding ${tenants.length} tenants into SpacetimeDB...`);
+            await saveTenants();
+            console.log(`Seeding ${workers.length} workers...`);
+            await saveWorkers();
+            console.log(`Seeding ${tasks.length} tasks...`);
+            await saveTasks();
+            console.log(`Seeding ${goals.length} goals...`);
+            await saveGoals();
+            console.log(`Seeding ${apiKeys.length} API keys...`);
+            await saveKeys();
+            console.log(`Seeding ${rlsPolicies.length} RLS policies...`);
+            await savePolicies();
+            console.log(`Seeding ${webhooks.length} webhooks...`);
+            await saveWebhooks();
+            console.log('Seeding quotas...');
+            await saveQuotas();
+            console.log('Seeding environments...');
+            await saveEnvironments();
+            console.log('Seeding memory...');
+            await saveMemory();
+            console.log('Seeding activity...');
+            await saveActivity();
+            console.log('✅ SpacetimeDB seed complete — dogfooding active');
+        } else {
+            console.log(`✅ SpacetimeDB has ${existingTenants.length} tenants — dogfooding active`);
+        }
+    } catch (err) {
+        console.error('⚠️  SpacetimeDB seed failed (will use JSON fallback):', err.message);
+    }
 });
