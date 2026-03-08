@@ -99,8 +99,8 @@ app.post('/api/tenants', async (req, res) => {
     }
 
     try {
-        // Scaffold using spacetime init
-        await execAsync(`spacetime init --lang typescript "${moduleDir}"`, {
+        // Scaffold using spacetime init (non-interactive for headless mode)
+        await execAsync(`spacetime init --lang typescript --non-interactive "${moduleDir}"`, {
             env: { ...process.env, PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
         });
 
@@ -197,22 +197,21 @@ app.post('/api/tenants/:id/deploy', async (req, res) => {
         // Use existing database name if we know it, otherwise create new
         const publishName = tenant.database || tenant.name;
         const { stdout, stderr } = await execAsync(
-            `spacetime publish ${publishName} --server ${SPACETIME_URL}`,
+            `spacetime publish ${publishName} --server ${SPACETIME_URL} -y --no-config`,
             {
                 cwd: tenant.moduleDir,
                 env: { ...process.env, PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
-                timeout: 60000,
+                timeout: 120000,
             }
         );
 
         const output = stdout + stderr;
 
-        // Try to extract the assigned database name from output
-        // SpacetimeDB outputs lines like: "Created new database with name: test-module-abc12"
-        // or "Updated database test-module-abc12"
-        const nameMatch = output.match(/(?:name|database)[:\s]+(\S+-[a-z0-9]+)/i);
+        // SpacetimeDB outputs: "Updated database with name: xxx" or "Created new database with name: xxx"
+        const nameMatch = output.match(/database with name:\s*(\S+)/i) ||
+            output.match(/name:\s*(\S+-[a-z0-9]+)/i);
         if (nameMatch && !tenant.database) {
-            tenant.database = nameMatch[1];
+            tenant.database = nameMatch[1].replace(/,$/, '');
         }
         if (!tenant.database) tenant.database = publishName;
 
