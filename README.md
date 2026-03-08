@@ -6,9 +6,9 @@ A **general-purpose visual control plane** for [SpacetimeDB](https://spacetimedb
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-v2.0.3-purple.svg)
-![MCP](https://img.shields.io/badge/MCP-15_tools-green.svg)
-![Pages](https://img.shields.io/badge/UI-12_pages-blue.svg)
-![API](https://img.shields.io/badge/API-40+_endpoints-orange.svg)
+![MCP](https://img.shields.io/badge/MCP-20_tools-green.svg)
+![Pages](https://img.shields.io/badge/UI-14_pages-blue.svg)
+![API](https://img.shields.io/badge/API-55+_endpoints-orange.svg)
 
 ---
 
@@ -43,6 +43,16 @@ Auto-discover SpacetimeDB modules, one-click deploy, log streaming, and backup/r
 JWT session management, API key generation with scoped permissions, key revocation, and integration guide.
 
 ![Security](docs/screenshots/security.png)
+
+### Task Board
+Kanban-style task management with atomic claims — no overlaps. Human and AI workers are equal participants. 5 columns: Backlog → Claimed → In Progress → Review → Done.
+
+![Task Board](docs/screenshots/taskboard.png)
+
+### Workers & Goals
+Register human and AI workers as equal participants. Create goals, track progress automatically as tasks complete. Live activity feed shows all mutations.
+
+![Workers](docs/screenshots/workers.png)
 
 <details>
 <summary>More screenshots</summary>
