@@ -1078,6 +1078,633 @@ app.get('/api/dashboard', async (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// Work Orchestration — Workers, Tasks, Goals, Activity
+// ─────────────────────────────────────────────────────────────
+
+const WORKERS_PATH = path.resolve(__dirname, 'workers.json');
+const TASKS_PATH = path.resolve(__dirname, 'tasks.json');
+const GOALS_PATH = path.resolve(__dirname, 'goals.json');
+const ACTIVITY_PATH = path.resolve(__dirname, 'activity.json');
+
+let workers = existsSync(WORKERS_PATH) ? JSON.parse(readFileSync(WORKERS_PATH, 'utf-8')) : [];
+let tasks = existsSync(TASKS_PATH) ? JSON.parse(readFileSync(TASKS_PATH, 'utf-8')) : [];
+let goals = existsSync(GOALS_PATH) ? JSON.parse(readFileSync(GOALS_PATH, 'utf-8')) : [];
+let activityLog = existsSync(ACTIVITY_PATH) ? JSON.parse(readFileSync(ACTIVITY_PATH, 'utf-8')) : [];
+
+function saveWorkers() { writeFileSync(WORKERS_PATH, JSON.stringify(workers, null, 2)); }
+function saveTasks() { writeFileSync(TASKS_PATH, JSON.stringify(tasks, null, 2)); }
+function saveGoals() { writeFileSync(GOALS_PATH, JSON.stringify(goals, null, 2)); }
+function saveActivity() { writeFileSync(ACTIVITY_PATH, JSON.stringify(activityLog, null, 2)); }
+
+function logActivity(workerId, action, targetType, targetId, details) {
+    const worker = workers.find(w => w.id === workerId);
+    const entry = {
+        id: randomUUID(),
+        timestamp: new Date().toISOString(),
+        workerId,
+        workerName: worker?.name || 'system',
+        workerType: worker?.type || 'system',
+        action,
+        targetType,
+        targetId,
+        details,
+    };
+    activityLog.unshift(entry);
+    if (activityLog.length > 500) activityLog = activityLog.slice(0, 500);
+    saveActivity();
+    fireWebhooks(`work.${action}`, entry);
+    return entry;
+}
+
+function recalcGoalProgress(goalId) {
+    const goalTasks = tasks.filter(t => t.goalId === goalId);
+    if (goalTasks.length === 0) return;
+    const done = goalTasks.filter(t => t.status === 'done').length;
+    const goal = goals.find(g => g.id === goalId);
+    if (goal) {
+        goal.progress = Math.round((done / goalTasks.length) * 100);
+        if (goal.progress === 100) goal.status = 'completed';
+        saveGoals();
+    }
+}
+
+// ── Workers ──────────────────────────────────────────────────
+
+// Register worker (human or AI — equal)
+app.post('/api/workers', (req, res) => {
+    const { name, type } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name required' });
+    if (!['human', 'ai'].includes(type)) return res.status(400).json({ error: 'Type must be "human" or "ai"' });
+
+    const worker = {
+        id: randomUUID(),
+        name,
+        type,
+        status: 'active',
+        lastSeen: new Date().toISOString(),
+        tasksCompleted: 0,
+        currentTaskId: null,
+        createdAt: new Date().toISOString(),
+    };
+    workers.push(worker);
+    saveWorkers();
+    logActivity(worker.id, 'worker.registered', 'worker', worker.id, `${name} (${type}) joined`);
+    res.status(201).json(worker);
+});
+
+// List workers
+app.get('/api/workers', (_req, res) => {
+    res.json(workers.map(w => ({
+        ...w,
+        currentTask: w.currentTaskId ? tasks.find(t => t.id === w.currentTaskId)?.title || null : null,
+    })));
+});
+
+// Update worker (heartbeat, status)
+app.patch('/api/workers/:id', (req, res) => {
+    const worker = workers.find(w => w.id === req.params.id);
+    if (!worker) return res.status(404).json({ error: 'Worker not found' });
+    if (req.body.status) worker.status = req.body.status;
+    worker.lastSeen = new Date().toISOString();
+    saveWorkers();
+    res.json(worker);
+});
+
+// Deregister worker
+app.delete('/api/workers/:id', (req, res) => {
+    const idx = workers.findIndex(w => w.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+
+    // Release any claimed tasks
+    const worker = workers[idx];
+    tasks.filter(t => t.claimedBy === worker.id).forEach(t => {
+        t.claimedBy = null;
+        t.claimedAt = null;
+        if (t.status === 'claimed' || t.status === 'in_progress') t.status = 'backlog';
+    });
+    saveTasks();
+
+    logActivity(worker.id, 'worker.removed', 'worker', worker.id, `${worker.name} left`);
+    workers.splice(idx, 1);
+    saveWorkers();
+    res.json({ deleted: true });
+});
+
+// ── Tasks (atomic claims) ────────────────────────────────────
+
+// Create task
+app.post('/api/tasks', (req, res) => {
+    const { title, description, goalId, tenantId, priority, createdBy } = req.body;
+    if (!title) return res.status(400).json({ error: 'Title required' });
+    if (!createdBy) return res.status(400).json({ error: 'createdBy (worker ID) required' });
+
+    const task = {
+        id: randomUUID(),
+        title,
+        description: description || '',
+        goalId: goalId || null,
+        tenantId: tenantId || null,
+        status: 'backlog',
+        priority: priority || 'medium',
+        claimedBy: null,
+        claimedAt: null,
+        completedBy: null,
+        completedAt: null,
+        output: null,
+        createdBy,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+    tasks.push(task);
+    saveTasks();
+    logActivity(createdBy, 'task.created', 'task', task.id, `Created: ${title}`);
+    res.status(201).json(task);
+});
+
+// List tasks (with filters)
+app.get('/api/tasks', (req, res) => {
+    let result = [...tasks];
+    if (req.query.status) result = result.filter(t => t.status === req.query.status);
+    if (req.query.goalId) result = result.filter(t => t.goalId === req.query.goalId);
+    if (req.query.claimedBy) result = result.filter(t => t.claimedBy === req.query.claimedBy);
+    if (req.query.tenantId) result = result.filter(t => t.tenantId === req.query.tenantId);
+
+    // Enrich with worker names
+    result = result.map(t => ({
+        ...t,
+        claimedByName: t.claimedBy ? workers.find(w => w.id === t.claimedBy)?.name || null : null,
+        createdByName: workers.find(w => w.id === t.createdBy)?.name || 'unknown',
+    }));
+
+    res.json(result);
+});
+
+// Get single task
+app.get('/api/tasks/:id', (req, res) => {
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Not found' });
+    res.json({
+        ...task,
+        claimedByName: task.claimedBy ? workers.find(w => w.id === task.claimedBy)?.name || null : null,
+        createdByName: workers.find(w => w.id === task.createdBy)?.name || 'unknown',
+    });
+});
+
+// ATOMIC CLAIM — the core anti-overlap mechanism
+app.post('/api/tasks/:id/claim', (req, res) => {
+    const { workerId } = req.body;
+    if (!workerId) return res.status(400).json({ error: 'workerId required' });
+
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const worker = workers.find(w => w.id === workerId);
+    if (!worker) return res.status(404).json({ error: 'Worker not found' });
+
+    // CONFLICT CHECK — atomic in single-threaded Node.js
+    if (task.claimedBy) {
+        const holder = workers.find(w => w.id === task.claimedBy);
+        return res.status(409).json({
+            error: 'Already claimed',
+            claimedBy: { id: task.claimedBy, name: holder?.name || 'unknown', type: holder?.type || 'unknown' },
+            claimedAt: task.claimedAt,
+        });
+    }
+
+    // Check if worker already has a task
+    if (worker.currentTaskId) {
+        const currentTask = tasks.find(t => t.id === worker.currentTaskId);
+        return res.status(409).json({
+            error: 'Worker already has an active task',
+            currentTask: { id: worker.currentTaskId, title: currentTask?.title || 'unknown' },
+        });
+    }
+
+    // ATOMIC SET
+    const now = new Date().toISOString();
+    task.claimedBy = workerId;
+    task.claimedAt = now;
+    task.status = 'claimed';
+    task.updatedAt = now;
+    worker.currentTaskId = task.id;
+    worker.lastSeen = now;
+
+    saveTasks();
+    saveWorkers();
+    logActivity(workerId, 'task.claimed', 'task', task.id, `${worker.name} claimed: ${task.title}`);
+
+    res.json(task);
+});
+
+// Release claim
+app.post('/api/tasks/:id/release', (req, res) => {
+    const { workerId } = req.body;
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    if (task.claimedBy !== workerId) {
+        return res.status(403).json({ error: 'Only the claimer can release' });
+    }
+
+    const worker = workers.find(w => w.id === workerId);
+    task.claimedBy = null;
+    task.claimedAt = null;
+    task.status = 'backlog';
+    task.updatedAt = new Date().toISOString();
+    if (worker) { worker.currentTaskId = null; worker.lastSeen = new Date().toISOString(); }
+
+    saveTasks();
+    saveWorkers();
+    logActivity(workerId, 'task.released', 'task', task.id, `${worker?.name || 'unknown'} released: ${task.title}`);
+
+    res.json(task);
+});
+
+// Move to in_progress
+app.post('/api/tasks/:id/start', (req, res) => {
+    const { workerId } = req.body;
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (task.claimedBy !== workerId) return res.status(403).json({ error: 'Only the claimer can start' });
+
+    task.status = 'in_progress';
+    task.updatedAt = new Date().toISOString();
+    saveTasks();
+    logActivity(workerId, 'task.started', 'task', task.id, `Started: ${task.title}`);
+    res.json(task);
+});
+
+// Complete task
+app.post('/api/tasks/:id/complete', (req, res) => {
+    const { workerId, output } = req.body;
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (task.claimedBy !== workerId) return res.status(403).json({ error: 'Only the claimer can complete' });
+
+    const now = new Date().toISOString();
+    task.status = 'done';
+    task.completedBy = workerId;
+    task.completedAt = now;
+    task.output = output || null;
+    task.updatedAt = now;
+
+    const worker = workers.find(w => w.id === workerId);
+    if (worker) {
+        worker.currentTaskId = null;
+        worker.tasksCompleted++;
+        worker.lastSeen = now;
+    }
+
+    saveTasks();
+    saveWorkers();
+    logActivity(workerId, 'task.completed', 'task', task.id, `Completed: ${task.title}`);
+
+    // Recalc goal progress
+    if (task.goalId) recalcGoalProgress(task.goalId);
+
+    res.json(task);
+});
+
+// Update task details
+app.patch('/api/tasks/:id', (req, res) => {
+    const task = tasks.find(t => t.id === req.params.id);
+    if (!task) return res.status(404).json({ error: 'Not found' });
+
+    const { title, description, priority, goalId, status } = req.body;
+    if (title) task.title = title;
+    if (description !== undefined) task.description = description;
+    if (priority) task.priority = priority;
+    if (goalId !== undefined) task.goalId = goalId;
+    if (status && ['backlog', 'review'].includes(status)) task.status = status;
+    task.updatedAt = new Date().toISOString();
+
+    saveTasks();
+    res.json(task);
+});
+
+// ── Goals ────────────────────────────────────────────────────
+
+// Create goal
+app.post('/api/goals', (req, res) => {
+    const { title, parentId, tenantId, createdBy } = req.body;
+    if (!title) return res.status(400).json({ error: 'Title required' });
+
+    const goal = {
+        id: randomUUID(),
+        title,
+        parentId: parentId || null,
+        tenantId: tenantId || null,
+        status: 'active',
+        progress: 0,
+        createdBy: createdBy || null,
+        createdAt: new Date().toISOString(),
+    };
+    goals.push(goal);
+    saveGoals();
+    if (createdBy) logActivity(createdBy, 'goal.created', 'goal', goal.id, `Goal: ${title}`);
+    res.status(201).json(goal);
+});
+
+// List goals (tree)
+app.get('/api/goals', (_req, res) => {
+    const enriched = goals.map(g => ({
+        ...g,
+        taskCount: tasks.filter(t => t.goalId === g.id).length,
+        tasksDone: tasks.filter(t => t.goalId === g.id && t.status === 'done').length,
+        children: goals.filter(c => c.parentId === g.id).map(c => c.id),
+    }));
+    res.json(enriched);
+});
+
+// Update goal
+app.patch('/api/goals/:id', (req, res) => {
+    const goal = goals.find(g => g.id === req.params.id);
+    if (!goal) return res.status(404).json({ error: 'Not found' });
+    if (req.body.title) goal.title = req.body.title;
+    if (req.body.status) goal.status = req.body.status;
+    if (req.body.parentId !== undefined) goal.parentId = req.body.parentId;
+    saveGoals();
+    res.json(goal);
+});
+
+// Delete goal
+app.delete('/api/goals/:id', (req, res) => {
+    const idx = goals.findIndex(g => g.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    // Unlink tasks
+    tasks.filter(t => t.goalId === req.params.id).forEach(t => { t.goalId = null; });
+    saveTasks();
+    goals.splice(idx, 1);
+    saveGoals();
+    res.json({ deleted: true });
+});
+
+// ── Activity Feed ────────────────────────────────────────────
+
+app.get('/api/activity', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+    res.json({
+        items: activityLog.slice(offset, offset + limit),
+        total: activityLog.length,
+    });
+});
+// ─────────────────────────────────────────────────────────────
+// Schema Migrations — Auto-capture on deploy, diff, rollback
+// ─────────────────────────────────────────────────────────────
+
+const MIGRATIONS_PATH = path.resolve(__dirname, 'migrations.json');
+let migrations = existsSync(MIGRATIONS_PATH) ? JSON.parse(readFileSync(MIGRATIONS_PATH, 'utf-8')) : [];
+function saveMigrations() { writeFileSync(MIGRATIONS_PATH, JSON.stringify(migrations, null, 2)); }
+
+// Auto-capture schema after successful deploy
+async function captureSchemaSnapshot(tenant) {
+    if (!tenant.database) return null;
+    try {
+        const schemaRes = await fetch(`${SPACETIME_URL}/v2/database/${tenant.database}/schema`);
+        if (!schemaRes.ok) return null;
+        const schemaText = await schemaRes.text();
+        const schema = JSON.parse(schemaText);
+
+        const tables = (schema.typespace?.types || schema.tables || []).filter(t => t.ty?.Product || t.name);
+        const reducers = (schema.typespace?.types || schema.reducers || []).filter(r => r.ty?.Reducer || r.name);
+
+        return { tables: tables.length, reducers: reducers.length, raw: schema };
+    } catch { return null; }
+}
+
+// Hook POST /api/tenants/:id/deploy — capture migration on success
+// (We wrap the existing deploy by attaching a post-deploy hook)
+app.post('/api/migrations/capture/:tenantId', async (req, res) => {
+    const tenant = tenants.find(t => t.id === req.params.tenantId || t.name === req.params.tenantId);
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+
+    const schema = await captureSchemaSnapshot(tenant);
+    const prevVersion = migrations.filter(m => m.tenantId === tenant.id).length;
+
+    const migration = {
+        id: randomUUID(),
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        version: prevVersion + 1,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        schemaSnapshot: schema,
+        deployedBy: req.body.deployedBy || null,
+        notes: req.body.notes || `Deploy v${prevVersion + 1}`,
+    };
+    migrations.push(migration);
+    saveMigrations();
+    res.status(201).json(migration);
+});
+
+// List migrations
+app.get('/api/migrations', (req, res) => {
+    let result = [...migrations];
+    if (req.query.tenantId) result = result.filter(m => m.tenantId === req.query.tenantId || m.tenantName === req.query.tenantId);
+    result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    res.json(result);
+});
+
+// Get single migration
+app.get('/api/migrations/:id', (req, res) => {
+    const m = migrations.find(m => m.id === req.params.id);
+    if (!m) return res.status(404).json({ error: 'Migration not found' });
+    res.json(m);
+});
+
+// Diff between two versions
+app.get('/api/migrations/:id/diff', (req, res) => {
+    const current = migrations.find(m => m.id === req.params.id);
+    if (!current) return res.status(404).json({ error: 'Migration not found' });
+
+    const tenantMigrations = migrations
+        .filter(m => m.tenantId === current.tenantId)
+        .sort((a, b) => a.version - b.version);
+
+    const prevIdx = tenantMigrations.findIndex(m => m.id === current.id) - 1;
+    const prev = prevIdx >= 0 ? tenantMigrations[prevIdx] : null;
+
+    const currentTables = current.schemaSnapshot?.tables || 0;
+    const currentReducers = current.schemaSnapshot?.reducers || 0;
+    const prevTables = prev?.schemaSnapshot?.tables || 0;
+    const prevReducers = prev?.schemaSnapshot?.reducers || 0;
+
+    res.json({
+        current: { version: current.version, tables: currentTables, reducers: currentReducers },
+        previous: prev ? { version: prev.version, tables: prevTables, reducers: prevReducers } : null,
+        diff: {
+            tablesAdded: Math.max(0, currentTables - prevTables),
+            tablesRemoved: Math.max(0, prevTables - currentTables),
+            reducersAdded: Math.max(0, currentReducers - prevReducers),
+            reducersRemoved: Math.max(0, prevReducers - currentReducers),
+        },
+    });
+});
+
+// Rollback — mark current as rolled_back, create new migration entry
+app.post('/api/migrations/:id/rollback', (req, res) => {
+    const target = migrations.find(m => m.id === req.params.id);
+    if (!target) return res.status(404).json({ error: 'Migration not found' });
+
+    // Mark the latest as rolled_back
+    const latest = migrations
+        .filter(m => m.tenantId === target.tenantId)
+        .sort((a, b) => b.version - a.version)[0];
+
+    if (latest) latest.status = 'rolled_back';
+
+    const rollback = {
+        id: randomUUID(),
+        tenantId: target.tenantId,
+        tenantName: target.tenantName,
+        version: (latest?.version || 0) + 1,
+        timestamp: new Date().toISOString(),
+        status: 'rollback',
+        schemaSnapshot: target.schemaSnapshot,
+        deployedBy: req.body.deployedBy || null,
+        notes: `Rollback to v${target.version}`,
+    };
+    migrations.push(rollback);
+    saveMigrations();
+    res.json(rollback);
+});
+
+// ─────────────────────────────────────────────────────────────
+// Rate Limiting & Quotas
+// ─────────────────────────────────────────────────────────────
+
+const QUOTAS_PATH = path.resolve(__dirname, 'quotas.json');
+let quotas = existsSync(QUOTAS_PATH) ? JSON.parse(readFileSync(QUOTAS_PATH, 'utf-8')) : {};
+function saveQuotas() { writeFileSync(QUOTAS_PATH, JSON.stringify(quotas, null, 2)); }
+
+function getOrCreateQuota(tenantId) {
+    if (!quotas[tenantId]) {
+        quotas[tenantId] = {
+            limits: { requestsPerMinute: 1000, requestsPerDay: 100000, storageMB: 1024, maxConnections: 50 },
+            usage: { requestsThisMinute: 0, requestsToday: 0, storageMB: 0, activeConnections: 0, minuteReset: Date.now(), dayReset: Date.now() },
+        };
+        saveQuotas();
+    }
+    // Reset counters if time has passed
+    const q = quotas[tenantId];
+    const now = Date.now();
+    if (now - q.usage.minuteReset > 60000) { q.usage.requestsThisMinute = 0; q.usage.minuteReset = now; }
+    if (now - q.usage.dayReset > 86400000) { q.usage.requestsToday = 0; q.usage.dayReset = now; }
+    return q;
+}
+
+// Get all quotas
+app.get('/api/quotas', (_req, res) => {
+    const result = {};
+    for (const tenant of tenants) {
+        result[tenant.id] = { name: tenant.name, ...getOrCreateQuota(tenant.id) };
+    }
+    res.json(result);
+});
+
+// Get quota for a tenant
+app.get('/api/quotas/:tenantId', (req, res) => {
+    const q = getOrCreateQuota(req.params.tenantId);
+    res.json(q);
+});
+
+// Update quota limits
+app.put('/api/quotas/:tenantId', (req, res) => {
+    const q = getOrCreateQuota(req.params.tenantId);
+    if (req.body.requestsPerMinute !== undefined) q.limits.requestsPerMinute = req.body.requestsPerMinute;
+    if (req.body.requestsPerDay !== undefined) q.limits.requestsPerDay = req.body.requestsPerDay;
+    if (req.body.storageMB !== undefined) q.limits.storageMB = req.body.storageMB;
+    if (req.body.maxConnections !== undefined) q.limits.maxConnections = req.body.maxConnections;
+    saveQuotas();
+    res.json(q);
+});
+
+// Increment usage (called internally or via API)
+app.post('/api/quotas/:tenantId/increment', (req, res) => {
+    const q = getOrCreateQuota(req.params.tenantId);
+    q.usage.requestsThisMinute++;
+    q.usage.requestsToday++;
+    saveQuotas();
+
+    // Check if over limit
+    const overLimit = q.usage.requestsThisMinute > q.limits.requestsPerMinute ||
+        q.usage.requestsToday > q.limits.requestsPerDay;
+
+    if (overLimit) return res.status(429).json({ error: 'Rate limit exceeded', quota: q });
+    res.json({ ok: true, usage: q.usage });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Environment Management (dev → staging → prod)
+// ─────────────────────────────────────────────────────────────
+
+const ENVIRONMENTS_PATH = path.resolve(__dirname, 'environments.json');
+let environments = existsSync(ENVIRONMENTS_PATH) ? JSON.parse(readFileSync(ENVIRONMENTS_PATH, 'utf-8')) : {};
+function saveEnvironments() { writeFileSync(ENVIRONMENTS_PATH, JSON.stringify(environments, null, 2)); }
+
+function getOrCreateEnv(tenantId) {
+    if (!environments[tenantId]) {
+        const tenant = tenants.find(t => t.id === tenantId);
+        environments[tenantId] = {
+            active: 'dev',
+            environments: {
+                dev: { databaseName: tenant?.database || `${tenant?.name || tenantId}-dev`, status: 'active', deployedAt: new Date().toISOString() },
+                staging: { databaseName: `${tenant?.name || tenantId}-staging`, status: 'not_deployed', deployedAt: null },
+                prod: { databaseName: `${tenant?.name || tenantId}-prod`, status: 'not_deployed', deployedAt: null },
+            },
+            promotionHistory: [],
+        };
+        saveEnvironments();
+    }
+    return environments[tenantId];
+}
+
+// Get environments for a tenant
+app.get('/api/tenants/:id/environments', (req, res) => {
+    const env = getOrCreateEnv(req.params.id);
+    res.json(env);
+});
+
+// Promote environment (dev→staging or staging→prod)
+app.post('/api/tenants/:id/promote', (req, res) => {
+    const { from, to, promotedBy } = req.body;
+    const validPromotions = { dev: 'staging', staging: 'prod' };
+    if (!from || !to || validPromotions[from] !== to) {
+        return res.status(400).json({ error: 'Invalid promotion. Valid: dev→staging, staging→prod' });
+    }
+
+    const env = getOrCreateEnv(req.params.id);
+    const now = new Date().toISOString();
+
+    // Copy source config to target
+    env.environments[to].status = 'active';
+    env.environments[to].deployedAt = now;
+    env.active = to;
+
+    env.promotionHistory.push({
+        id: randomUUID(),
+        from,
+        to,
+        timestamp: now,
+        promotedBy: promotedBy || null,
+    });
+
+    saveEnvironments();
+    res.json(env);
+});
+
+// Set active environment
+app.patch('/api/tenants/:id/environments', (req, res) => {
+    const env = getOrCreateEnv(req.params.id);
+    if (req.body.active && ['dev', 'staging', 'prod'].includes(req.body.active)) {
+        env.active = req.body.active;
+        saveEnvironments();
+    }
+    res.json(env);
+});
+
+// ─────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────
 

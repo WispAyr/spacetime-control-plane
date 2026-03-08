@@ -177,11 +177,7 @@ export default function AgentPage() {
 
                                         {/* Expandable details */}
                                         {expandedAction === action.id && (
-                                            <pre style={{
-                                                marginTop: 8, padding: 10, background: 'var(--bg-primary)',
-                                                borderRadius: 'var(--radius-sm)', fontSize: 11, fontFamily: 'var(--font-mono)',
-                                                color: 'var(--text-secondary)', overflow: 'auto', maxHeight: 200,
-                                            }}>
+                                            <pre className="code-block" style={{ marginTop: 8, maxHeight: 200 }}>
                                                 {JSON.stringify(JSON.parse(action.details || '{}'), null, 2)}
                                             </pre>
                                         )}

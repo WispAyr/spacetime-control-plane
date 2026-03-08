@@ -626,6 +626,147 @@ server.tool(
     }
 );
 
+// ── Work Orchestration MCP Tools ─────────────────────────────
+
+server.tool(
+    'cp_list_workers',
+    'List registered workers (human + AI)',
+    {},
+    async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/workers`);
+            const data = await res.json();
+            const table = data.map(w =>
+                `| ${w.type === 'ai' ? '🤖' : '👤'} ${w.name} | ${w.status} | ${w.currentTask || 'idle'} | ${w.tasksCompleted} done |`
+            ).join('\n');
+            return { content: [{ type: 'text', text: `Workers (${data.length}):\n| Worker | Status | Task | Completed |\n|--------|--------|------|----------|\n${table}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_register_worker',
+    'Register yourself as a worker (human or AI)',
+    { name: z.string().describe('Worker name'), type: z.enum(['human', 'ai']).describe('Worker type') },
+    async ({ name, type }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/workers`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, type }),
+            });
+            const data = await res.json();
+            if (!res.ok) return { content: [{ type: 'text', text: `Error: ${data.error}` }], isError: true };
+            return { content: [{ type: 'text', text: `✓ Registered worker: ${name} (${type}) — ID: ${data.id}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_list_tasks',
+    'List tasks with optional status filter',
+    { status: z.enum(['backlog', 'claimed', 'in_progress', 'review', 'done']).optional().describe('Filter by status') },
+    async ({ status }) => {
+        try {
+            const url = status ? `${BACKEND_URL}/api/tasks?status=${status}` : `${BACKEND_URL}/api/tasks`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.length === 0) return { content: [{ type: 'text', text: 'No tasks found' }] };
+            const table = data.map(t =>
+                `| ${t.title} | ${t.status} | ${t.priority} | ${t.claimedByName || '-'} |`
+            ).join('\n');
+            return { content: [{ type: 'text', text: `Tasks (${data.length}):\n| Title | Status | Priority | Claimed By |\n|-------|--------|----------|------------|\n${table}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_claim_task',
+    'Claim a task (atomic — fails if already claimed)',
+    { taskId: z.string().describe('Task ID to claim'), workerId: z.string().describe('Your worker ID') },
+    async ({ taskId, workerId }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/claim`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workerId }),
+            });
+            const data = await res.json();
+            if (!res.ok) return { content: [{ type: 'text', text: `❌ ${data.error}${data.claimedBy ? ` by ${data.claimedBy.name}` : ''}` }], isError: true };
+            return { content: [{ type: 'text', text: `✓ Claimed: ${data.title}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_complete_task',
+    'Complete a claimed task with optional output',
+    { taskId: z.string().describe('Task ID'), workerId: z.string().describe('Your worker ID'), output: z.string().optional().describe('Result/notes') },
+    async ({ taskId, workerId, output }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/complete`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workerId, output }),
+            });
+            const data = await res.json();
+            if (!res.ok) return { content: [{ type: 'text', text: `Error: ${data.error}` }], isError: true };
+            return { content: [{ type: 'text', text: `✓ Completed: ${data.title}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+// ── Operations MCP Tools ─────────────────────────────────────
+
+server.tool(
+    'cp_list_migrations',
+    'List schema migration history for a tenant',
+    { tenantId: z.string().optional().describe('Tenant ID to filter (optional)') },
+    async ({ tenantId }) => {
+        try {
+            const url = tenantId ? `${BACKEND_URL}/api/migrations?tenantId=${tenantId}` : `${BACKEND_URL}/api/migrations`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.length === 0) return { content: [{ type: 'text', text: 'No migrations found' }] };
+            const table = data.map(m =>
+                `| v${m.version} | ${m.tenantName} | ${m.status} | ${m.schemaSnapshot?.tables || '?'} tables | ${new Date(m.timestamp).toLocaleString()} |`
+            ).join('\n');
+            return { content: [{ type: 'text', text: `Migrations (${data.length}):\n| Version | Tenant | Status | Schema | Date |\n|---------|--------|--------|--------|------|\n${table}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_rollback',
+    'Rollback a tenant to a specific migration version',
+    { migrationId: z.string().describe('Migration ID to rollback to') },
+    async ({ migrationId }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/migrations/${migrationId}/rollback`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            if (!res.ok) return { content: [{ type: 'text', text: `Error: ${data.error}` }], isError: true };
+            return { content: [{ type: 'text', text: `✓ Rolled back: ${data.notes} (now at v${data.version})` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
+server.tool(
+    'cp_promote_env',
+    'Promote tenant environment (dev→staging or staging→prod)',
+    { tenantId: z.string().describe('Tenant ID'), from: z.enum(['dev', 'staging']).describe('Source environment'), to: z.enum(['staging', 'prod']).describe('Target environment') },
+    async ({ tenantId, from, to }) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/tenants/${tenantId}/promote`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from, to }),
+            });
+            const data = await res.json();
+            if (!res.ok) return { content: [{ type: 'text', text: `Error: ${data.error}` }], isError: true };
+            return { content: [{ type: 'text', text: `✓ Promoted ${from} → ${to}. Active environment: ${data.active}` }] };
+        } catch (err) { return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true }; }
+    }
+);
+
 // ── Resources ────────────────────────────────────────────────
 
 server.resource(

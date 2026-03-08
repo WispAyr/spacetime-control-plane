@@ -1,0 +1,13 @@
+[
+  {
+    "id": "test-module-mmi57qem",
+    "name": "test-module",
+    "description": "",
+    "moduleDir": "/Users/ewanrichardson/Development/spacetime/test-module",
+    "database": "test-module-7970f",
+    "status": "deployed",
+    "createdAt": "2026-03-08T19:26:11.566Z",
+    "lastDeployedAt": "2026-03-08T19:26:11.566Z",
+    "deployHistory": []
+  }
+]

@@ -124,14 +124,12 @@ export default function MonitoringPage() {
     return (
         <div className="app-content" style={{ flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div className="page-header stagger">
                 <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>Monitoring</h2>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        Real-time SpacetimeDB cluster status
-                    </span>
+                    <h2>Monitoring</h2>
+                    <div className="page-subtitle">Real-time SpacetimeDB cluster status</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div className="page-actions">
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                         <input type="checkbox" checked={autoRefresh} onChange={() => setAutoRefresh(!autoRefresh)} />
                         Auto-refresh (10s)
@@ -141,7 +139,7 @@ export default function MonitoringPage() {
             </div>
 
             {/* Stats Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, flexShrink: 0 }}>
+            <div className="stats-grid stagger-1" style={{ flexShrink: 0 }}>
                 <StatCard label="TENANTS" value={overview.totalTenants} color="var(--accent-blue)" />
                 <StatCard label="DEPLOYED" value={overview.deployedTenants} color="var(--accent-green)" />
                 <StatCard label="ERRORS" value={overview.errorTenants} color="var(--accent-red)" />
@@ -149,7 +147,7 @@ export default function MonitoringPage() {
             </div>
 
             {/* Tenant Health Grid */}
-            <div className="panel" style={{ flexShrink: 0 }}>
+            <div className="panel stagger-2" style={{ flexShrink: 0 }}>
                 <div className="panel-header">
                     <span className="panel-title">Tenant Health</span>
                 </div>
@@ -175,7 +173,7 @@ export default function MonitoringPage() {
 
             {/* Selected Tenant Detail */}
             {selectedTenant && tenantStats && (
-                <div className="panel fade-in" style={{ flexShrink: 0 }}>
+                <div className="panel scale-in" style={{ flexShrink: 0 }}>
                     <div className="panel-header">
                         <span className="panel-title" style={{ fontFamily: 'var(--font-mono)' }}>{selectedTenant}</span>
                         <span className="badge badge-blue">{tenantStats.database}</span>
@@ -192,22 +190,22 @@ export default function MonitoringPage() {
                         {tenantStats.tableDetails.length > 0 && (
                             <div>
                                 <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>Table Breakdown</h4>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <table className="table-premium">
                                     <thead>
-                                        <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Table</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Columns</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Rows</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>% of Total</th>
+                                        <tr>
+                                            <th>Table</th>
+                                            <th className="text-right">Columns</th>
+                                            <th className="text-right">Rows</th>
+                                            <th className="text-right">% of Total</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {tenantStats.tableDetails.map(td => (
-                                            <tr key={td.name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                                <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>{td.name}</td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{td.columns}</td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--accent-cyan)' }}>{td.rows}</td>
-                                                <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                            <tr key={td.name}>
+                                                <td className="text-mono">{td.name}</td>
+                                                <td className="text-right">{td.columns}</td>
+                                                <td className="text-right" style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>{td.rows}</td>
+                                                <td className="text-right">
                                                     {typeof td.rows === 'number' && tenantStats.totalRows > 0
                                                         ? `${((td.rows / tenantStats.totalRows) * 100).toFixed(1)}%`
                                                         : '—'}
@@ -223,7 +221,7 @@ export default function MonitoringPage() {
             )}
 
             {/* Recent Deploys */}
-            <div className="panel" style={{ flexShrink: 0 }}>
+            <div className="panel stagger-3" style={{ flexShrink: 0 }}>
                 <div className="panel-header">
                     <span className="panel-title">Recent Deploys</span>
                     <span className="badge badge-purple">{overview.recentDeploys.length}</span>
@@ -266,7 +264,7 @@ export default function MonitoringPage() {
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
     return (
-        <div className="panel" style={{ textAlign: 'center', padding: '16px 12px' }}>
+        <div className="panel stat-card card-hover" style={{ textAlign: 'center', padding: '16px 12px' }}>
             <div style={{
                 fontSize: 28, fontWeight: 800, color,
                 fontFamily: 'var(--font-mono)',
@@ -275,7 +273,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
             }}>
                 {value}
             </div>
-            <div style={{
+            <div className="stat-card-label" style={{
                 fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)',
                 letterSpacing: '1.5px', marginTop: 6,
             }}>
@@ -305,22 +303,11 @@ function TenantHealthCard({ tenant, selected, onClick }: {
     return (
         <div
             onClick={onClick}
-            style={{
-                padding: '12px 14px',
-                background: selected ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-                borderRadius: 'var(--radius-sm)',
-                border: `1px solid ${selected ? 'var(--accent-blue)' : 'var(--border-subtle)'}`,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-            }}
+            className={`tenant-health-card ${selected ? 'selected' : ''}`}
         >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div className="flex justify-between items-center" style={{ marginBottom: 8 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600 }}>{tenant.name}</span>
-                <span style={{
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: isOnline ? 'var(--accent-green)' : 'var(--accent-red)',
-                    boxShadow: isOnline ? '0 0 6px var(--accent-green)' : 'none',
-                }} />
+                <span className={`status-dot ${isOnline ? 'status-dot--online' : 'status-dot--error'}`} />
             </div>
             <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-tertiary)' }}>
                 <span>{tenant.tables} tables</span>

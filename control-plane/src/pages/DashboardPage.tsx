@@ -18,7 +18,11 @@ function formatUptime(seconds: number): string {
     return `${m}m`;
 }
 
-export default function DashboardPage() {
+interface Props {
+    onNavigate?: (page: string) => void;
+}
+
+export default function DashboardPage({ onNavigate }: Props) {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -46,12 +50,10 @@ export default function DashboardPage() {
 
     if (loading) {
         return (
-            <div className="app-content">
-                <div className="panel" style={{ flex: 1 }}>
-                    <div className="empty-state" style={{ padding: 60 }}>
-                        <div className="icon">⏳</div>
-                        <h3>Loading dashboard…</h3>
-                    </div>
+            <div className="app-content flex-col items-center justify-center">
+                <div className="empty-state scale-in">
+                    <div className="icon">⏳</div>
+                    <h3>Loading dashboard…</h3>
                 </div>
             </div>
         );
@@ -59,60 +61,56 @@ export default function DashboardPage() {
 
     if (error || !data) {
         return (
-            <div className="app-content">
-                <div className="panel" style={{ flex: 1 }}>
-                    <div className="empty-state" style={{ padding: 60 }}>
-                        <div className="icon">⚠️</div>
-                        <h3>Backend Not Running</h3>
-                        <p>Start the backend: <code>cd backend && npm start</code></p>
-                    </div>
+            <div className="app-content flex-col items-center justify-center">
+                <div className="empty-state scale-in">
+                    <div className="icon">⚠️</div>
+                    <h3>Backend Not Running</h3>
+                    <p>Start the backend: <code>cd backend && npm start</code></p>
                 </div>
             </div>
         );
     }
 
-    const statCards: { label: string; value: string | number; sub: string; color: string; icon: string }[] = [
-        { label: 'System Health', value: data.system.spacetimedb === 'healthy' ? 'Healthy' : 'Degraded', sub: `Uptime: ${formatUptime(data.system.uptime)}`, color: data.system.spacetimedb === 'healthy' ? 'var(--accent-green)' : 'var(--accent-red)', icon: '💚' },
-        { label: 'Tenants', value: data.tenants.total, sub: `${data.tenants.deployed} deployed · ${data.tenants.errors} errors`, color: 'var(--accent-blue)', icon: '◎' },
-        { label: 'Total Deploys', value: data.deploys.total, sub: `Success rate: ${data.deploys.successRate}`, color: 'var(--accent-purple)', icon: '🚀' },
-        { label: 'Security', value: `${data.security.activeApiKeys} keys`, sub: `${data.security.enforcedPolicies}/${data.security.rlsPolicies} RLS enforced`, color: 'var(--accent-cyan)', icon: '🔐' },
+    const isHealthy = data.system.spacetimedb === 'healthy';
+
+    const statCards: { label: string; value: string | number; sub: string; variant: string; icon: string }[] = [
+        { label: 'System Health', value: isHealthy ? 'Healthy' : 'Degraded', sub: `Uptime: ${formatUptime(data.system.uptime)}`, variant: isHealthy ? 'green' : 'red', icon: '💚' },
+        { label: 'Tenants', value: data.tenants.total, sub: `${data.tenants.deployed} deployed · ${data.tenants.errors} errors`, variant: 'blue', icon: '◎' },
+        { label: 'Total Deploys', value: data.deploys.total, sub: `Success rate: ${data.deploys.successRate}`, variant: 'purple', icon: '🚀' },
+        { label: 'Security', value: `${data.security.activeApiKeys} keys`, sub: `${data.security.enforcedPolicies}/${data.security.rlsPolicies} RLS enforced`, variant: 'amber', icon: '🔐' },
+    ];
+
+    const shortcuts: { label: string; desc: string; page: string }[] = [
+        { label: '📊 Monitoring', desc: 'Real-time health grid', page: 'monitoring' },
+        { label: '🛡️ RLS Policies', desc: 'Guard code gen', page: 'policies' },
+        { label: '🔐 Security', desc: 'JWT & API keys', page: 'security' },
+        { label: '🔔 Webhooks', desc: `${data.webhooks.active} active`, page: 'webhooks' },
     ];
 
     return (
         <div className="app-content" style={{ flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
             {/* Header */}
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="page-header stagger">
                 <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>Dashboard</h2>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        System overview — auto-refreshes every 15s
-                    </span>
+                    <h2>Dashboard</h2>
+                    <div className="page-subtitle">System overview — auto-refreshes every 15s</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11,
-                        padding: '4px 10px', borderRadius: 'var(--radius-sm)',
-                        background: data.system.spacetimedb === 'healthy' ? 'rgba(0,200,100,0.15)' : 'rgba(255,80,80,0.15)',
-                        color: data.system.spacetimedb === 'healthy' ? 'var(--accent-green)' : 'var(--accent-red)',
-                        fontWeight: 600,
-                    }}>
-                        {data.system.spacetimedb === 'healthy' ? '● SpacetimeDB Online' : '● SpacetimeDB Offline'}
+                <div className="page-actions">
+                    <span className={`badge ${isHealthy ? 'badge-green' : 'badge-red'}`}
+                        style={{ padding: '5px 12px', fontSize: 11 }}>
+                        ● {isHealthy ? 'SpacetimeDB Online' : 'SpacetimeDB Offline'}
                     </span>
                 </div>
             </div>
 
             {/* Stat Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, flexShrink: 0 }}>
-                {statCards.map(card => (
-                    <div key={card.label} className="panel fade-in" style={{ padding: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div>
-                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, marginBottom: 4 }}>{card.label}</div>
-                                <div style={{ fontSize: 22, fontWeight: 700, color: card.color, letterSpacing: '-1px' }}>{card.value}</div>
-                                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>{card.sub}</div>
-                            </div>
-                            <span style={{ fontSize: 22, opacity: 0.6 }}>{card.icon}</span>
-                        </div>
+                {statCards.map((card, i) => (
+                    <div key={card.label} className={`stat-card stat-card--${card.variant} stagger-${i + 1}`}>
+                        <div className="stat-label">{card.label}</div>
+                        <div className={`stat-value text-${card.variant}`}>{card.value}</div>
+                        <div className="stat-detail">{card.sub}</div>
+                        <span className="stat-icon">{card.icon}</span>
                     </div>
                 ))}
             </div>
@@ -120,24 +118,22 @@ export default function DashboardPage() {
             {/* Two-column: Tenants + Recent Activity */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1, minHeight: 0 }}>
                 {/* Tenant Health */}
-                <div className="panel fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="panel card-hover stagger-5" style={{ display: 'flex', flexDirection: 'column' }}>
                     <div className="panel-header">
                         <span className="panel-title">Tenant Status</span>
                         <span className="badge badge-blue">{data.tenantStats.length} online</span>
                     </div>
                     <div className="panel-body" style={{ flex: 1, overflowY: 'auto' }}>
                         {data.tenantStats.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-tertiary)', fontSize: 12 }}>
-                                No deployed tenants
+                            <div className="empty-state" style={{ padding: 30 }}>
+                                <p>No deployed tenants</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div className="flex flex-col gap-sm">
                                 {data.tenantStats.map(t => (
-                                    <div key={t.name} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '8px 10px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)',
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div key={t.name} className="card-interactive"
+                                        style={{ padding: '8px 10px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div className="flex items-center gap-sm">
                                             <span style={{ color: t.status === 'online' ? 'var(--accent-green)' : 'var(--accent-red)', fontSize: 10 }}>●</span>
                                             <div>
                                                 <div style={{ fontSize: 12, fontWeight: 600 }}>{t.name}</div>
@@ -145,7 +141,7 @@ export default function DashboardPage() {
                                             </div>
                                         </div>
                                         <div style={{ textAlign: 'right', fontSize: 10, color: 'var(--text-tertiary)' }}>
-                                            <div>{t.tables} tables · {t.reducers} reducers</div>
+                                            {t.tables} tables · {t.reducers} reducers
                                         </div>
                                     </div>
                                 ))}
@@ -155,30 +151,24 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Recent Deploys */}
-                <div className="panel fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="panel card-hover stagger-6" style={{ display: 'flex', flexDirection: 'column' }}>
                     <div className="panel-header">
                         <span className="panel-title">Recent Activity</span>
                         <span className="badge badge-purple">{data.deploys.total} deploys</span>
                     </div>
                     <div className="panel-body" style={{ flex: 1, overflowY: 'auto' }}>
                         {data.deploys.recent.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-tertiary)', fontSize: 12 }}>
-                                No deploy history yet
+                            <div className="empty-state" style={{ padding: 30 }}>
+                                <p>No deploy history yet</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div className="flex flex-col gap-xs">
                                 {data.deploys.recent.map((d, i) => (
-                                    <div key={i} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                                        background: 'var(--bg-primary)',
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div key={i} className="card-interactive"
+                                        style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div className="flex items-center gap-sm">
                                             <span style={{ fontSize: 12 }}>{d.success ? '✓' : '✗'}</span>
-                                            <span style={{
-                                                fontSize: 11, fontWeight: 600,
-                                                color: d.success ? 'var(--accent-green)' : 'var(--accent-red)',
-                                            }}>
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: d.success ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                                                 {d.tenant}
                                             </span>
                                         </div>
@@ -193,21 +183,15 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Quick Links */}
-            <div className="panel fade-in" style={{ flexShrink: 0, padding: 14 }}>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    {[
-                        { label: '📊 Monitoring', desc: 'Real-time health grid' },
-                        { label: '🛡️ RLS Policies', desc: 'Guard code gen' },
-                        { label: '🔐 Security', desc: 'JWT & API keys' },
-                        { label: '🔔 Webhooks', desc: `${data.webhooks.active} active` },
-                    ].map(link => (
-                        <div key={link.label} style={{
-                            padding: '10px 16px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-md)',
-                            textAlign: 'center', minWidth: 120,
-                        }}>
-                            <div style={{ fontSize: 12, fontWeight: 600 }}>{link.label}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{link.desc}</div>
+            {/* Quick Links — now clickable! */}
+            <div className="panel stagger-7" style={{ flexShrink: 0 }}>
+                <div className="shortcut-bar">
+                    {shortcuts.map((link, i) => (
+                        <div key={link.label}
+                            className={`shortcut-card stagger-${i + 4}`}
+                            onClick={() => onNavigate?.(link.page)}>
+                            <span className="shortcut-label">{link.label}</span>
+                            <span className="shortcut-detail">{link.desc}</span>
                         </div>
                     ))}
                 </div>

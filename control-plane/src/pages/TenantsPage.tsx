@@ -172,14 +172,14 @@ export default function TenantsPage() {
     return (
         <div className="app-content" style={{ flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div className="page-header stagger">
                 <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>Tenant Management</h2>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                    <h2>Tenant Management</h2>
+                    <div className="page-subtitle">
                         {tenants.length} tenants · {tenants.filter(t => t.status === 'deployed').length} deployed
-                    </span>
+                    </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="page-actions">
                     <button className="btn" onClick={loadAll}>↻ Refresh</button>
                     <button className="btn btn-primary" onClick={() => setShowCreate(!showCreate)}>+ New Tenant</button>
                 </div>
@@ -249,8 +249,8 @@ export default function TenantsPage() {
 
             {/* Tenant Cards */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                {tenants.map(tenant => (
-                    <div key={tenant.id} className="panel">
+                {tenants.map((tenant, i) => (
+                    <div key={tenant.id} className={`panel card-hover stagger-${Math.min(i + 1, 8)}`}>
                         <div className="panel-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
                                 <div style={{

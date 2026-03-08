@@ -119,12 +119,10 @@ export default function PoliciesPage() {
     return (
         <div className="app-content" style={{ flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div className="page-header stagger">
                 <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>Row-Level Security</h2>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        Define access policies per table — generates SpacetimeDB guard code
-                    </span>
+                    <h2>Row-Level Security</h2>
+                    <div className="page-subtitle">Define access policies per table — generates SpacetimeDB guard code</div>
                 </div>
                 <select
                     className="input"
@@ -215,48 +213,39 @@ export default function PoliciesPage() {
                                     No policies defined — add one above to start securing this tenant's tables
                                 </div>
                             ) : (
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <table className="table-premium">
                                     <thead>
-                                        <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Table</th>
-                                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Operation</th>
-                                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Condition</th>
-                                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Status</th>
-                                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Actions</th>
+                                        <tr>
+                                            <th>Table</th>
+                                            <th>Operation</th>
+                                            <th>Condition</th>
+                                            <th>Status</th>
+                                            <th className="text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {policies.map(p => (
                                             <tr key={p.id} style={{
-                                                borderBottom: '1px solid var(--border-subtle)',
                                                 opacity: p.enforcement === 'disabled' ? 0.5 : 1,
                                             }}>
-                                                <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.table}</td>
-                                                <td style={{ padding: '8px' }}>
+                                                <td className="text-mono" style={{ fontWeight: 600 }}>{p.table}</td>
+                                                <td>
                                                     <span className={`badge badge-${p.operation === 'all' ? 'purple' : 'blue'}`} style={{ fontSize: 9 }}>
                                                         {p.operation.toUpperCase()}
                                                     </span>
                                                 </td>
-                                                <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-cyan)' }}>
+                                                <td className="text-mono" style={{ fontSize: 11, color: 'var(--accent-cyan)' }}>
                                                     {p.condition}
                                                 </td>
-                                                <td style={{ padding: '8px' }}>
+                                                <td>
                                                     <span
                                                         onClick={() => handleToggle(p)}
-                                                        style={{
-                                                            cursor: 'pointer',
-                                                            padding: '2px 8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            fontSize: 10,
-                                                            fontWeight: 600,
-                                                            background: p.enforcement === 'enforced' ? 'rgba(0,200,100,0.15)' : 'rgba(255,100,100,0.1)',
-                                                            color: p.enforcement === 'enforced' ? 'var(--accent-green)' : 'var(--accent-red)',
-                                                        }}
+                                                        className={`enforcement-toggle enforcement-toggle--${p.enforcement}`}
                                                     >
                                                         {p.enforcement === 'enforced' ? '● ENFORCED' : '○ DISABLED'}
                                                     </span>
                                                 </td>
-                                                <td style={{ padding: '8px', textAlign: 'right' }}>
+                                                <td className="text-right">
                                                     <button
                                                         className="btn btn-sm"
                                                         style={{ color: 'var(--accent-red)', fontSize: 11 }}
@@ -283,11 +272,7 @@ export default function PoliciesPage() {
                                 </button>
                             </div>
                             <div className="panel-body">
-                                <pre style={{
-                                    padding: 14, background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)',
-                                    fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-green)',
-                                    maxHeight: 300, overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.5,
-                                }}>
+                                <pre className="code-block code-block--green">
                                     {generatedCode}
                                 </pre>
                             </div>

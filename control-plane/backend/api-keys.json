@@ -1,0 +1,15 @@
+[
+  {
+    "id": "184fbb7b-6daf-46db-9f20-21887dc79ec9",
+    "name": "ci-pipeline",
+    "key": "stcp_f6da41ad30ea4280b27a81872f7ecf35",
+    "scopes": [
+      "read",
+      "write",
+      "deploy"
+    ],
+    "createdAt": "2026-03-08T19:37:25.325Z",
+    "lastUsedAt": null,
+    "active": true
+  }
+]

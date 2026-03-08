@@ -14,9 +14,12 @@ import EventsPage from './pages/EventsPage';
 import SecurityPage from './pages/SecurityPage';
 import PoliciesPage from './pages/PoliciesPage';
 import SettingsPage from './pages/SettingsPage';
+import TaskBoardPage from './pages/TaskBoardPage';
+import WorkersPage from './pages/WorkersPage';
+import MigrationsPage from './pages/MigrationsPage';
 
 function AppContent() {
-  const [page, setPage] = useState<'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings'>('dashboard');
+  const [page, setPage] = useState<'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings'>('dashboard');
   const [showConnect, setShowConnect] = useState(false);
   const { instances } = useConnection();
 
@@ -28,7 +31,7 @@ function AppContent() {
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <DashboardPage />;
+        return <DashboardPage onNavigate={(p: string) => setPage(p as typeof page)} />;
       case 'tables':
         return <TablesPage />;
       case 'reducers':
@@ -41,6 +44,12 @@ function AppContent() {
         return <AgentPage />;
       case 'events':
         return <EventsPage />;
+      case 'tasks':
+        return <TaskBoardPage />;
+      case 'workers':
+        return <WorkersPage />;
+      case 'operations':
+        return <MigrationsPage />;
       case 'monitoring':
         return <MonitoringPage />;
       case 'policies':

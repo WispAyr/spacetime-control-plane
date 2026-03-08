@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-type Page = 'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings';
+type Page = 'dashboard' | 'tables' | 'reducers' | 'sql' | 'agent' | 'events' | 'tasks' | 'workers' | 'operations' | 'instances' | 'monitoring' | 'policies' | 'security' | 'settings';
 
 interface SidebarProps {
     activePage: Page;
@@ -17,6 +17,12 @@ const navItems: { page: Page; icon: string; label: string }[] = [
 const aiItems: { page: Page; icon: string; label: string }[] = [
     { page: 'agent', icon: '◉', label: 'AI Agent' },
     { page: 'events', icon: '⚡', label: 'Events' },
+];
+
+const workItems: { page: Page; icon: string; label: string }[] = [
+    { page: 'tasks', icon: '📋', label: 'Tasks' },
+    { page: 'workers', icon: '👤', label: 'Workers' },
+    { page: 'operations', icon: '🔄', label: 'Ops' },
 ];
 
 const metaItems: { page: Page; icon: string; label: string }[] = [
@@ -41,7 +47,7 @@ function NavGroup({ items, activePage, onNavigate, aiActive }: {
                     <div
                         className={`sidebar-item ${activePage === item.page ? 'active' : ''}`}
                         onClick={() => onNavigate(item.page)}
-                        title={item.label}
+                        data-tooltip={item.label}
                     >
                         <span style={{ fontSize: 18 }}>{item.icon}</span>
                         {item.page === 'agent' && aiActive && <span className="indicator" />}
@@ -61,6 +67,8 @@ export default function Sidebar({ activePage, onNavigate, aiActive }: SidebarPro
                 <NavGroup items={navItems} activePage={activePage} onNavigate={onNavigate} />
                 <div className="sidebar-divider" />
                 <NavGroup items={aiItems} activePage={activePage} onNavigate={onNavigate} aiActive={aiActive} />
+                <div className="sidebar-divider" />
+                <NavGroup items={workItems} activePage={activePage} onNavigate={onNavigate} />
                 <div style={{ flex: 1 }} />
                 <div className="sidebar-divider" />
                 <NavGroup items={metaItems} activePage={activePage} onNavigate={onNavigate} />

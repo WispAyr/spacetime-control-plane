@@ -1,0 +1,18 @@
+{
+  "test-module-mmi57qem": {
+    "limits": {
+      "requestsPerMinute": 1000,
+      "requestsPerDay": 100000,
+      "storageMB": 1024,
+      "maxConnections": 50
+    },
+    "usage": {
+      "requestsThisMinute": 0,
+      "requestsToday": 0,
+      "storageMB": 0,
+      "activeConnections": 0,
+      "minuteReset": 1773002942853,
+      "dayReset": 1773002942853
+    }
+  }
+}

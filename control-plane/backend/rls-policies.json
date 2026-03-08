@@ -1,0 +1,14 @@
+[
+  {
+    "id": "c8ee636f-461c-40c3-bc78-2be017fa7adf",
+    "tenantId": "test-module-mmi57qem",
+    "tenantName": "test-module",
+    "table": "person",
+    "operation": "all",
+    "condition": "owner_id == ctx.senderowner_id == ctx.sender",
+    "description": "Only owners can access their own data",
+    "enforcement": "enforced",
+    "createdAt": "2026-03-08T19:47:41.594Z",
+    "updatedAt": "2026-03-08T19:47:41.594Z"
+  }
+]

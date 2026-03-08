@@ -96,15 +96,15 @@ export default function SecurityPage() {
     return (
         <div className="app-content" style={{ flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
             {/* Header */}
-            <div style={{ flexShrink: 0 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>Security & Auth</h2>
-                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    Manage access tokens, API keys, and authentication
-                </span>
+            <div className="page-header stagger">
+                <div>
+                    <h2>Security & Auth</h2>
+                    <div className="page-subtitle">Manage access tokens, API keys, and authentication</div>
+                </div>
             </div>
 
             {/* Session */}
-            <div className="panel" style={{ flexShrink: 0 }}>
+            <div className="panel stagger-1" style={{ flexShrink: 0 }}>
                 <div className="panel-header">
                     <span className="panel-title">Session</span>
                     <span className={`badge ${token ? 'badge-green' : 'badge-amber'}`}>
@@ -155,7 +155,7 @@ export default function SecurityPage() {
             </div>
 
             {/* API Keys */}
-            <div className="panel" style={{ flexShrink: 0 }}>
+            <div className="panel stagger-2" style={{ flexShrink: 0 }}>
                 <div className="panel-header">
                     <span className="panel-title">API Keys</span>
                     <span className="badge badge-blue">{activeKeys.length} active</span>
@@ -209,30 +209,30 @@ export default function SecurityPage() {
 
                     {/* Active keys */}
                     {activeKeys.length > 0 ? (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <table className="table-premium">
                             <thead>
-                                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Name</th>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Key</th>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Scopes</th>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Created</th>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Last Used</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 500 }}>Actions</th>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Key</th>
+                                    <th>Scopes</th>
+                                    <th>Created</th>
+                                    <th>Last Used</th>
+                                    <th className="text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {activeKeys.map(k => (
-                                    <tr key={k.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                                        <td style={{ padding: '8px', fontWeight: 600 }}>{k.name}</td>
-                                        <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: 11 }}>{k.key}</td>
-                                        <td style={{ padding: '8px' }}>
+                                    <tr key={k.id}>
+                                        <td style={{ fontWeight: 600 }}>{k.name}</td>
+                                        <td className="text-mono" style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{k.key}</td>
+                                        <td>
                                             {k.scopes.map(s => (
                                                 <span key={s} className="badge badge-blue" style={{ fontSize: 9, marginRight: 4 }}>{s}</span>
                                             ))}
                                         </td>
-                                        <td style={{ padding: '8px', color: 'var(--text-tertiary)', fontSize: 11 }}>{new Date(k.createdAt).toLocaleDateString()}</td>
-                                        <td style={{ padding: '8px', color: 'var(--text-tertiary)', fontSize: 11 }}>{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : 'never'}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right' }}>
+                                        <td style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{new Date(k.createdAt).toLocaleDateString()}</td>
+                                        <td style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : 'never'}</td>
+                                        <td className="text-right">
                                             <button className="btn btn-sm" style={{ color: 'var(--accent-red)' }} onClick={() => handleRevokeKey(k.id)}>
                                                 Revoke
                                             </button>
@@ -268,7 +268,7 @@ export default function SecurityPage() {
             </div>
 
             {/* Usage Info */}
-            <div className="panel" style={{ flexShrink: 0 }}>
+            <div className="panel stagger-3" style={{ flexShrink: 0 }}>
                 <div className="panel-header">
                     <span className="panel-title">Integration Guide</span>
                 </div>
