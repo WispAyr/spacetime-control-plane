@@ -2059,42 +2059,184 @@ app.listen(PORT, async () => {
     console.log(`SpacetimeDB: ${SPACETIME_URL}`);
     console.log(`SpacetimeDB CP Database: ${stdb.STDB_CP_DB}`);
     console.log(`Modules dir: ${MODULES_DIR}`);
+
+    // ── Load from SpacetimeDB (true dogfooding) ──────────────────
+    try {
+        const stdbTenants = await stdb.findAll('cp_tenant');
+        if (stdbTenants.length > 0) {
+            // SpacetimeDB is the source of truth — hydrate in-memory caches
+            console.log(`Loading from SpacetimeDB...`);
+
+            // Tenants: map snake_case → camelCase
+            tenants = stdbTenants.map(r => ({
+                id: r.id, name: r.name, description: r.description || '',
+                moduleDir: r.module_dir || null, database: r.database || null,
+                status: r.status || 'created', template: r.template || 'blank',
+                createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                lastDeployedAt: r.last_deployed_at && Number(r.last_deployed_at) > 0 ? new Date(Number(r.last_deployed_at)).toISOString() : null,
+                deployHistory: [],
+            }));
+            console.log(`  ✓ ${tenants.length} tenants`);
+
+            // Workers
+            const stdbWorkers = await stdb.findAll('cp_worker');
+            if (stdbWorkers.length > 0) {
+                workers = stdbWorkers.map(r => ({
+                    id: r.id, name: r.name, type: r.worker_type || 'human',
+                    status: r.status || 'active',
+                    lastSeen: r.last_seen ? new Date(Number(r.last_seen)).toISOString() : null,
+                    tasksCompleted: r.tasks_completed || 0,
+                    currentTaskId: r.current_task_id || null,
+                    registeredAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                }));
+                console.log(`  ✓ ${workers.length} workers`);
+            }
+
+            // Tasks
+            const stdbTasks = await stdb.findAll('cp_task');
+            if (stdbTasks.length > 0) {
+                tasks = stdbTasks.map(r => ({
+                    id: r.id, title: r.title || '', description: r.description || '',
+                    goalId: r.goal_id || '', tenantId: r.tenant_id || '', skillId: r.skill_id || '',
+                    status: r.status || 'backlog', priority: r.priority || 'medium',
+                    claimedBy: r.claimed_by || null,
+                    claimedAt: r.claimed_at && Number(r.claimed_at) > 0 ? new Date(Number(r.claimed_at)).toISOString() : null,
+                    completedBy: r.completed_by || null,
+                    completedAt: r.completed_at && Number(r.completed_at) > 0 ? new Date(Number(r.completed_at)).toISOString() : null,
+                    output: r.output || '', summary: r.summary || '', createdBy: r.created_by || '',
+                    createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                    updatedAt: r.updated_at ? new Date(Number(r.updated_at)).toISOString() : new Date().toISOString(),
+                }));
+                console.log(`  ✓ ${tasks.length} tasks`);
+            }
+
+            // Goals
+            const stdbGoals = await stdb.findAll('cp_goal');
+            if (stdbGoals.length > 0) {
+                goals = stdbGoals.map(r => ({
+                    id: r.id, title: r.title || '', description: r.description || '',
+                    targetDate: r.target_date || '', progress: r.progress || 0,
+                    status: r.status || 'active', createdBy: r.created_by || '',
+                    createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                }));
+                console.log(`  ✓ ${goals.length} goals`);
+            }
+
+            // API Keys
+            const stdbKeys = await stdb.findAll('cp_api_key');
+            if (stdbKeys.length > 0) {
+                apiKeys = stdbKeys.map(r => ({
+                    id: r.id, name: r.name || '', key: r.key_hash || '',
+                    scopes: (() => { try { return JSON.parse(r.scopes || '[]'); } catch { return []; } })(),
+                    active: r.active !== false,
+                    createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                    lastUsedAt: r.last_used_at && Number(r.last_used_at) > 0 ? new Date(Number(r.last_used_at)).toISOString() : null,
+                }));
+                console.log(`  ✓ ${apiKeys.length} API keys`);
+            }
+
+            // RLS Policies
+            const stdbPolicies = await stdb.findAll('cp_rls_policy');
+            if (stdbPolicies.length > 0) {
+                rlsPolicies = stdbPolicies.map(r => ({
+                    id: r.id, tenantId: r.tenant_id || '', table: r.table_name || '',
+                    operation: r.operation || 'all', condition: r.condition || '',
+                    description: r.description || '', enforcement: r.enforcement || 'enforced',
+                    createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                    updatedAt: r.updated_at ? new Date(Number(r.updated_at)).toISOString() : new Date().toISOString(),
+                }));
+                console.log(`  ✓ ${rlsPolicies.length} RLS policies`);
+            }
+
+            // Webhooks
+            const stdbWebhooks = await stdb.findAll('cp_webhook');
+            if (stdbWebhooks.length > 0) {
+                webhooks = stdbWebhooks.map(r => ({
+                    id: r.id, url: r.url || '', name: r.url || '',
+                    events: (() => { try { return JSON.parse(r.events || '[]'); } catch { return []; } })(),
+                    active: r.active !== false, secret: r.secret || '',
+                    createdAt: r.created_at ? new Date(Number(r.created_at)).toISOString() : new Date().toISOString(),
+                }));
+                console.log(`  ✓ ${webhooks.length} webhooks`);
+            }
+
+            // Quotas
+            const stdbQuotas = await stdb.findAll('cp_quota');
+            if (stdbQuotas.length > 0) {
+                quotas = {};
+                for (const r of stdbQuotas) {
+                    quotas[r.tenant_id] = {
+                        limits: {
+                            requestsPerMinute: r.requests_per_minute || 1000,
+                            requestsPerDay: r.requests_per_day || 100000,
+                            storageMB: r.storage_mb || 1024,
+                            maxConnections: r.max_connections || 50,
+                        },
+                        usage: {
+                            requestsThisMinute: r.requests_this_minute || 0,
+                            requestsToday: r.requests_today || 0,
+                            storageMB: 0, activeConnections: 0,
+                            minuteReset: Number(r.minute_reset) || Date.now(),
+                            dayReset: Number(r.day_reset) || Date.now(),
+                        },
+                    };
+                }
+                console.log(`  ✓ ${stdbQuotas.length} quotas`);
+            }
+
+            // Activity
+            const stdbActivity = await stdb.findAll('cp_activity');
+            if (stdbActivity.length > 0) {
+                activityLog = stdbActivity.map(r => ({
+                    id: r.id, timestamp: r.timestamp ? new Date(Number(r.timestamp)).toISOString() : new Date().toISOString(),
+                    workerId: r.worker_id || '', workerName: r.worker_name || '',
+                    workerType: r.worker_type || '', action: r.action || '',
+                    targetType: r.target_type || '', targetId: r.target_id || '', details: r.details || '',
+                }));
+                console.log(`  ✓ ${activityLog.length} activity entries`);
+            }
+
+            // Memory
+            const stdbNotes = await stdb.findAll('cp_memory_note');
+            const stdbPatterns = await stdb.findAll('cp_memory_pattern');
+            if (stdbNotes.length > 0 || stdbPatterns.length > 0) {
+                memory = {};
+                for (const n of stdbNotes) {
+                    if (!memory[n.worker_id]) memory[n.worker_id] = { preferences: {}, patterns: [], notes: [] };
+                    memory[n.worker_id].notes.push({
+                        id: n.id, content: n.content || '',
+                        tags: (() => { try { return JSON.parse(n.tags || '[]'); } catch { return []; } })(),
+                        createdAt: n.created_at ? new Date(Number(n.created_at)).toISOString() : new Date().toISOString(),
+                    });
+                }
+                for (const p of stdbPatterns) {
+                    if (!memory[p.worker_id]) memory[p.worker_id] = { preferences: {}, patterns: [], notes: [] };
+                    memory[p.worker_id].patterns.push({
+                        key: p.pattern_key || '', value: p.pattern_value || '',
+                        count: p.count || 1,
+                        lastUsed: p.last_used ? new Date(Number(p.last_used)).toISOString() : new Date().toISOString(),
+                    });
+                }
+                console.log(`  ✓ ${stdbNotes.length} notes, ${stdbPatterns.length} patterns`);
+            }
+
+            console.log(`✅ Loaded all data from SpacetimeDB — true dogfooding`);
+        } else if (tenants.length > 0) {
+            // SpacetimeDB is empty but JSON files have data — seed
+            console.log(`SpacetimeDB is empty, seeding from JSON files...`);
+            await saveTenants(); await saveWorkers(); await saveTasks(); await saveGoals();
+            await saveKeys(); await savePolicies(); await saveWebhooks();
+            await saveQuotas(); await saveEnvironments(); await saveMemory(); await saveActivity();
+            console.log('✅ Seeded SpacetimeDB from JSON — dogfooding active');
+        } else {
+            console.log('ℹ️  No data yet — SpacetimeDB and JSON both empty');
+        }
+    } catch (err) {
+        console.error('⚠️  SpacetimeDB load failed, using JSON fallback:', err.message);
+    }
+
     console.log(`Tenants: ${tenants.length} registered`);
     console.log(`API Keys: ${apiKeys.filter(k => k.active).length} active`);
     console.log(`Skills: ${loadSkills().length} loaded`);
     console.log(`JWT Secret: ${JWT_SECRET.slice(0, 12)}...`);
-
-    // Seed existing JSON data into SpacetimeDB if tables are empty
-    try {
-        const existingTenants = await stdb.findAll('cp_tenant');
-        if (existingTenants.length === 0 && tenants.length > 0) {
-            console.log(`Seeding ${tenants.length} tenants into SpacetimeDB...`);
-            await saveTenants();
-            console.log(`Seeding ${workers.length} workers...`);
-            await saveWorkers();
-            console.log(`Seeding ${tasks.length} tasks...`);
-            await saveTasks();
-            console.log(`Seeding ${goals.length} goals...`);
-            await saveGoals();
-            console.log(`Seeding ${apiKeys.length} API keys...`);
-            await saveKeys();
-            console.log(`Seeding ${rlsPolicies.length} RLS policies...`);
-            await savePolicies();
-            console.log(`Seeding ${webhooks.length} webhooks...`);
-            await saveWebhooks();
-            console.log('Seeding quotas...');
-            await saveQuotas();
-            console.log('Seeding environments...');
-            await saveEnvironments();
-            console.log('Seeding memory...');
-            await saveMemory();
-            console.log('Seeding activity...');
-            await saveActivity();
-            console.log('✅ SpacetimeDB seed complete — dogfooding active');
-        } else {
-            console.log(`✅ SpacetimeDB has ${existingTenants.length} tenants — dogfooding active`);
-        }
-    } catch (err) {
-        console.error('⚠️  SpacetimeDB seed failed (will use JSON fallback):', err.message);
-    }
 });
